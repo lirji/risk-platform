@@ -1,0 +1,29 @@
+{
+  "index_patterns": ["txn-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "codec": "best_compression"
+    },
+    "mappings": {
+      "dynamic": "false",
+      "properties": {
+        "@timestamp":          { "type": "date" },
+        "sourceId":            { "type": "keyword" },
+        "channel":             { "type": "keyword" },
+        "bizType":             { "type": "keyword" },
+        "acct_hash":           { "type": "keyword" },
+        "account_masked":      { "type": "keyword" },
+        "counterparty_masked": { "type": "keyword" },
+        "amount":              { "type": "long" },
+        "amount_yuan":         { "type": "scaled_float", "scaling_factor": 100 },
+        "deviceId":            { "type": "keyword" },
+        "ip":                  { "type": "keyword" }
+      }
+    }
+  },
+  "_meta": {
+    "desc": "交易检索/案件调查索引模板 (PLAN §2.5): 精确匹配字段 keyword、金额 long(分)、关闭动态映射控膨胀、best_compression。单节点设 replicas=0 保 green。生产应叠加 ILM(hot/warm/cold/delete rollover)。"
+  }
+}

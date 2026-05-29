@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.lrj.risk</groupId>
+        <artifactId>risk-platform</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>fraud-engine</artifactId>
+    <name>fraud-engine</name>
+    <description>反欺诈规则引擎: Drools 规则集 + 来源绑定 + 决策聚合 (双轨决策的规则侧)</description>
+
+    <dependencies>
+        <!-- 共享特征层: 规则读 FeatureSnapshot -->
+        <dependency>
+            <groupId>com.lrj.risk</groupId>
+            <artifactId>common-feature</artifactId>
+        </dependency>
+
+        <!-- Spring: 让 DroolsConfig/FraudEngineService 成为可被 gateway 扫描的 Bean -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Drools 核心 (版本由 drools-bom 管) -->
+        <dependency>
+            <groupId>org.kie</groupId>
+            <artifactId>kie-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-compiler</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-mvel</artifactId>
+        </dependency>
+        <!-- Drools 8.x 解析 kmodule.xml 必须显式加 (见 drools-demo 踩坑2) -->
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-xml-support</artifactId>
+        </dependency>
+
+        <!-- 验证规则: 启动 KieContainer 实际编译 DRL 并触发规则 (compile 不校验 DRL) -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 继承 spring-boot-starter-parent 拿依赖管理 + 插件管理 (与 drools-demo 同版本基线) -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.lrj.risk</groupId>
+    <artifactId>risk-platform</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>risk-platform</name>
+    <description>实时交易反欺诈 + 客户画像 平台 (最小可跑核心)</description>
+
+    <modules>
+        <module>common-feature</module>
+        <module>fraud-engine</module>
+        <module>fraud-gateway</module>
+        <module>profiling-realtime</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <drools.version>8.44.2.Final</drools.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Drools BOM (8.44.2 没发布 kie-bom, 用 drools-bom; 见 drools-demo 踩坑1) -->
+            <dependency>
+                <groupId>org.drools</groupId>
+                <artifactId>drools-bom</artifactId>
+                <version>${drools.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- 平台内部模块统一版本 -->
+            <dependency>
+                <groupId>com.lrj.risk</groupId>
+                <artifactId>common-feature</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lrj.risk</groupId>
+                <artifactId>fraud-engine</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

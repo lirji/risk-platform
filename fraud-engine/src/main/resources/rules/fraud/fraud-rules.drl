@@ -1,0 +1,67 @@
+package rules.fraud;
+
+import com.lrj.risk.fraud.engine.model.TransactionEvent;
+import com.lrj.risk.fraud.engine.model.RiskAssessment;
+import com.lrj.risk.fraud.engine.model.RiskLevel;
+import com.lrj.risk.feature.FeatureSnapshot;
+
+// =====================================================================
+// 规则集 "blacklist": 黑白名单层 (最快, 命中直接拒绝)
+// 特征侧约定: feature hash 里 blacklist=true 表示该账号在黑名单
+// =====================================================================
+
+rule "黑名单账户直接拒绝"
+    agenda-group "blacklist"
+    salience 100
+when
+    TransactionEvent()
+    FeatureSnapshot(getBoolean("blacklist") == true)
+    $r: RiskAssessment()
+then
+    $r.reject("BLACKLIST_ACCOUNT");
+end
+
+rule "黑名单设备直接拒绝"
+    agenda-group "blacklist"
+    salience 100
+when
+    TransactionEvent()
+    FeatureSnapshot(getBoolean("device_blacklist") == true)
+    $r: RiskAssessment()
+then
+    $r.reject("BLACKLIST_DEVICE");
+end
+
+// =====================================================================
+// 规则集 "threshold": 阈值/统计层 (金额 + 特征聚合)
+// 金额单位为分; 5_000_000 分 = 50000 元
+// =====================================================================
+
+rule "大额转账"
+    agenda-group "threshold"
+when
+    TransactionEvent(bizType == "TRANSFER", amount > 5000000)
+    $r: RiskAssessment()
+then
+    $r.escalate(RiskLevel.HIGH, "LARGE_TRANSFER");
+end
+
+rule "当日累计金额超限"
+    agenda-group "threshold"
+when
+    TransactionEvent()
+    FeatureSnapshot(getLong("daily_amount") > 10000000)
+    $r: RiskAssessment()
+then
+    $r.escalate(RiskLevel.HIGH, "DAILY_AMOUNT_EXCEEDED");
+end
+
+rule "新设备中额交易"
+    agenda-group "threshold"
+when
+    TransactionEvent(amount > 1000000)
+    FeatureSnapshot(getBoolean("device_new") == true)
+    $r: RiskAssessment()
+then
+    $r.escalate(RiskLevel.MEDIUM, "NEW_DEVICE_MID_AMOUNT");
+end

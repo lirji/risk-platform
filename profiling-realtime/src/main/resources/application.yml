@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: profiling-realtime
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      group-id: realtime-feature
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # 信任消息体所在包并指定默认反序列化类型 (与 gateway 同一 TransactionMessage)
+        spring.json.trusted.packages: com.lrj.risk.common.event
+        spring.json.value.default.type: com.lrj.risk.common.event.TransactionMessage
