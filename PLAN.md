@@ -380,6 +380,7 @@ Hive 特征宽表 + 案件标签
 | M6a | Spark 训练 决策树+随机森林 → 评估 → 导出 MLeap | 通过评估的 model.zip |
 | M6b | Java + MLeap runtime 推理 + 延迟压测 | 毫秒级评分服务 |
 | M6c | fraudScore 接入 Drools 决策表，双轨上线 | 规则+模型双轨决策 |
+| M7 | 架构A 离线评级引擎 + Hive 离线宽表(Metastore+MinIO/S3A 存算分离) | 任务驱动 Spark 评级: Hive 宽表 JOIN ES → 写 es 风险库; 训练样本读自 Hive (见 HIVE-INTEGRATION-PLAN.md) |
 
 ---
 
@@ -400,8 +401,8 @@ Hive 特征宽表 + 案件标签
 | 模型推理 | MLeap runtime (JVM) | 进程内嵌入 |
 | 任务调度 | DolphinScheduler | 离线批任务 + 模型重训编排 |
 | 在线特征 / 缓存 | Redis (L2) + Caffeine (L1) | HBase 备选(海量) |
-| 离线数仓 | Hive / Iceberg (HDFS) | |
-| 模型/文件存储 | HDFS 或 MinIO | model.zip、数据湖 |
+| 离线数仓 | Hive (Metastore) | ✅ 已落地半真形态: Hive Metastore + MinIO/S3A 存算分离, 不上 HDFS (见 HIVE-INTEGRATION-PLAN.md) |
+| 模型/文件存储 | MinIO (S3A) | ✅ 离线宽表 parquet 落 MinIO; model.zip / PMML |
 | 元数据 | MySQL | 大表可 ShardingSphere 分库分表 |
 | 交易检索 / 案件调查 | Elasticsearch + Kibana | |
 | 数据采集 / 解耦 | 接入方推送 + Canal/Debezium Binlog → Kafka → Logstash 清洗 | |
