@@ -1,0 +1,11 @@
+RuleSet,rules.fraud
+Import,"com.lrj.risk.fraud.engine.model.TransactionEvent,com.lrj.risk.fraud.engine.model.RiskAssessment"
+,,,,,
+RuleTable AmountTier,,,,,
+CONDITION,CONDITION,CONDITION,CONDITION,ACTION,AGENDA-GROUP
+TransactionEvent,TransactionEvent,TransactionEvent,r:RiskAssessment,,
+"channel == ""$param""",amount >= $param,amount < $param,,"r.tier(""$param"");",
+渠道,金额下限(分),金额上限(分),评估对象,命中码,规则集
+MOBILE,5000000,100000000,this != null,DT_MOBILE_LARGE,threshold
+MOBILE,100000000,9999999999,this != null,DT_MOBILE_HUGE,threshold
+WEB,10000000,1000000000,this != null,DT_WEB_LARGE,threshold

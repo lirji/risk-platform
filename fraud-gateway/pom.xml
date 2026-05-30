@@ -32,6 +32,22 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
+        <!-- Sentinel 熔断/限流/降级 (§3.6 50ms SLA 兜底); 独立用 core+aspectj, 不引 spring-cloud-alibaba -->
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-core</artifactId>
+            <version>1.8.8</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-annotation-aspectj</artifactId>
+            <version>1.8.8</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <!-- 可观测性: P99 延迟 / 命中率经 /actuator/prometheus 暴露 (参考 drools-demo Step 15) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

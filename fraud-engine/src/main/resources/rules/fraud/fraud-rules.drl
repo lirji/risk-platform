@@ -65,3 +65,34 @@ when
 then
     $r.escalate(RiskLevel.MEDIUM, "NEW_DEVICE_MID_AMOUNT");
 end
+
+rule "短时高频交易"
+    agenda-group "threshold"
+when
+    TransactionEvent()
+    FeatureSnapshot(getLong("txn_count_5m") >= 5)
+    $r: RiskAssessment()
+then
+    $r.escalate(RiskLevel.HIGH, "HIGH_VELOCITY");
+end
+
+// =====================================================================
+// 规则集 "model": 模型分双轨 (PLAN §4.3)
+// fraudScore 为随机森林输出的欺诈概率, 进引擎前已算好塞入 RiskAssessment
+// =====================================================================
+
+rule "模型高风险拦截"
+    agenda-group "model"
+when
+    $r: RiskAssessment(fraudScore > 0.9)
+then
+    $r.escalate(RiskLevel.REJECT, "MODEL_HIGH_RISK");
+end
+
+rule "模型中风险复核"
+    agenda-group "model"
+when
+    $r: RiskAssessment(fraudScore > 0.6, fraudScore <= 0.9)
+then
+    $r.escalate(RiskLevel.HIGH, "MODEL_MID_RISK");
+end

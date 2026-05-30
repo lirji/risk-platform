@@ -23,10 +23,12 @@ class FraudEngineServiceTest {
 
     @BeforeAll
     static void setUp() {
-        // 走与 @Bean 同一条构建路径 (程序化 KieFileSystem), 不起 Spring 容器
+        // 走与 @Bean 同一条构建路径 (程序化 KieFileSystem), 不起 Spring 容器。
+        // 模型分用未初始化的 ModelScorer(恒返回 0), 隔离测试规则逻辑。
         engine = new FraudEngineService(
-                DroolsConfig.buildFraudKieContainer(),
-                new SourceRuleSetBinding());
+                new KieContainerHolder(),
+                new SourceRuleSetBinding(),
+                new ModelScorer());
     }
 
     private TransactionEvent txn(String bizType, long amount) {
@@ -70,6 +72,23 @@ class FraudEngineServiceTest {
         RiskAssessment r = engine.evaluate(txn("TRANSFER", 10000), f);
         assertEquals(RiskLevel.HIGH, r.getLevel());
         assertTrue(r.getHitRules().contains("DAILY_AMOUNT_EXCEEDED"));
+    }
+
+    @Test
+    void 决策表_手机大额命中() {
+        TransactionEvent t = txn("TRANSFER", 8_000_000); // 8万元, 落在 [5万,100万) 档
+        t.setChannel("MOBILE");
+        RiskAssessment r = engine.evaluate(t, FeatureSnapshot.empty());
+        assertTrue(r.getHitRules().contains("DT_MOBILE_LARGE"),
+                "应命中决策表规则 DT_MOBILE_LARGE, 实际=" + r.getHitRules());
+    }
+
+    @Test
+    void 短时高频_命中速度规则() {
+        FeatureSnapshot f = new FeatureSnapshot(Map.of("txn_count_5m", "6"));
+        RiskAssessment r = engine.evaluate(txn("TRANSFER", 10000), f);
+        assertTrue(r.getHitRules().contains("HIGH_VELOCITY"),
+                "应命中速度规则 HIGH_VELOCITY, 实际=" + r.getHitRules());
     }
 
     @Test

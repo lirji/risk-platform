@@ -25,6 +25,9 @@
         <module>fraud-engine</module>
         <module>fraud-gateway</module>
         <module>profiling-realtime</module>
+        <module>fraud-model-train</module>
+        <module>profiling-realtime-flink</module>
+        <module>rating-engine</module>
     </modules>
 
     <properties>

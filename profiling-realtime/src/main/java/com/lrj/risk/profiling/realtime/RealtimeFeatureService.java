@@ -46,12 +46,30 @@ public class RealtimeFeatureService {
             return redis.call('HGET', key, 'daily_amount')
             """;
 
+    /** 5 分钟滑动窗口交易计数 (时序/速度算子): ZSET 存事件时间, 剔除窗口外, 返回当前计数。 */
+    private static final String VELOCITY_LUA = """
+            local zkey = KEYS[1]
+            local fkey = KEYS[2]
+            local now = tonumber(ARGV[1])
+            local win = tonumber(ARGV[2])
+            redis.call('ZADD', zkey, now, ARGV[3])
+            redis.call('ZREMRANGEBYSCORE', zkey, 0, now - win)
+            redis.call('PEXPIRE', zkey, win)
+            local c = redis.call('ZCARD', zkey)
+            redis.call('HSET', fkey, 'txn_count_5m', c)
+            return c
+            """;
+
+    private static final long WINDOW_5M_MS = 5 * 60 * 1000L;
+
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> dailyScript;
+    private final DefaultRedisScript<Long> velocityScript;
 
     public RealtimeFeatureService(StringRedisTemplate redis) {
         this.redis = redis;
         this.dailyScript = new DefaultRedisScript<>(DAILY_LUA, Long.class);
+        this.velocityScript = new DefaultRedisScript<>(VELOCITY_LUA, Long.class);
     }
 
     public void onTransaction(TransactionMessage msg) {
@@ -64,6 +82,12 @@ public class RealtimeFeatureService {
 
         Long dailyAmount = redis.execute(dailyScript, List.of(featureKey),
                 today, String.valueOf(msg.getAmount()));
+
+        // 5 分钟滑动窗口交易频次 (时序/速度特征)
+        long now = msg.getEventTime() > 0 ? msg.getEventTime() : System.currentTimeMillis();
+        String member = now + ":" + System.nanoTime();
+        redis.execute(velocityScript, List.of("vel:" + acct, featureKey),
+                String.valueOf(now), String.valueOf(WINDOW_5M_MS), member);
 
         // 设备新颖度: SADD 返回 1 表示该账号首次见到此设备
         if (msg.getDeviceId() != null && !msg.getDeviceId().isBlank()) {

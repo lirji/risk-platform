@@ -27,6 +27,11 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
         </dependency>
+        <!-- @PostConstruct (jakarta.annotation); 版本由 spring-boot BOM 管 -->
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+        </dependency>
 
         <!-- Drools 核心 (版本由 drools-bom 管) -->
         <dependency>
@@ -49,6 +54,23 @@
         <dependency>
             <groupId>org.drools</groupId>
             <artifactId>drools-xml-support</artifactId>
+        </dependency>
+        <!-- 决策表 (CSV/Excel): 业务方可维护的表格规则 (§3.5) -->
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-decisiontables</artifactId>
+        </dependency>
+
+        <!-- 模型推理: 加载 PMML(随机森林) 做线上评分, 纯 Java、Java21 原生、微秒级 (PLAN M6b) -->
+        <dependency>
+            <groupId>org.jpmml</groupId>
+            <artifactId>pmml-evaluator</artifactId>
+            <version>1.7.7</version>
+        </dependency>
+        <!-- PMML 反序列化需 JAXB 运行时 (Java 11+ 无内置); 版本由 spring-boot BOM 管 (4.0.5) -->
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
         </dependency>
 
         <!-- 验证规则: 启动 KieContainer 实际编译 DRL 并触发规则 (compile 不校验 DRL) -->

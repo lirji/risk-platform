@@ -1,5 +1,9 @@
 package com.lrj.risk.fraud.gateway;
 
+import java.util.List;
+
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.lrj.risk.common.event.TransactionMessage;
 import com.lrj.risk.feature.FeatureClient;
 import com.lrj.risk.feature.FeatureSnapshot;
@@ -36,6 +40,8 @@ public class RiskController {
     }
 
     @PostMapping("/evaluate")
+    @SentinelResource(value = SentinelConfig.RES_EVALUATE,
+            fallback = "evaluateFallback", blockHandler = "evaluateBlocked")
     public RiskResponse evaluate(@RequestBody RiskRequest req) {
         long start = System.nanoTime();
 
@@ -67,6 +73,18 @@ public class RiskController {
                 assessment.getFraudScore(),
                 assessment.getHitRules(),
                 costMs);
+    }
+
+    /** 流控/熔断触发: 快速返回保守决策 (加验证), 不拖垮 SLA。签名 = 原方法 + BlockException。 */
+    public RiskResponse evaluateBlocked(RiskRequest req, BlockException ex) {
+        return new RiskResponse("MEDIUM", "CHALLENGE", 0d,
+                List.of("DEGRADED_RATELIMIT"), 0);
+    }
+
+    /** 业务异常降级: 返回保守"需复核"。签名 = 原方法 + Throwable。 */
+    public RiskResponse evaluateFallback(RiskRequest req, Throwable ex) {
+        return new RiskResponse("HIGH", "REVIEW", 0d,
+                List.of("FALLBACK_EXCEPTION"), 0);
     }
 
     private TransactionMessage toMessage(RiskRequest req) {

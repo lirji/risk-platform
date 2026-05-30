@@ -29,6 +29,11 @@ public class RiskAssessment {
         escalate(RiskLevel.REJECT, hitRule);
     }
 
+    /** 决策表命中: 升 HIGH 并登记命中码 (单参便于在决策表 ACTION 列无逗号转义)。 */
+    public void tier(String hitRule) {
+        escalate(RiskLevel.HIGH, hitRule);
+    }
+
     /** 由风险等级映射到对银行返回的处置动作。 */
     public String getAction() {
         return switch (level) {

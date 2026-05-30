@@ -4,8 +4,9 @@ services:
   mysql:
     image: mysql:8.0
     container_name: risk-mysql
+    # 宿主机映射 13306, 避开本地已占用的 3306 (容器内仍 3306)
     ports:
-      - "3306:3306"
+      - "13306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: root123
       MYSQL_DATABASE: risk_platform
@@ -54,6 +55,16 @@ services:
     volumes:
       - es-data:/usr/share/elasticsearch/data
 
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.0
+    container_name: risk-kibana
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+
   logstash:
     image: docker.elastic.co/logstash/logstash:8.13.0
     container_name: risk-logstash
@@ -69,6 +80,15 @@ services:
       LS_JAVA_OPTS: "-Xms256m -Xmx256m"
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+
+  # 模型重训调度: 单容器版 (内嵌 H2+ZK), UI http://localhost:12345/dolphinscheduler/ui (admin/dolphinscheduler123)
+  dolphinscheduler:
+    image: apache/dolphinscheduler-standalone-server:3.2.2
+    container_name: risk-dolphinscheduler
+    ports:
+      - "12345:12345"
+    environment:
+      TZ: Asia/Shanghai
 
 volumes:
   mysql-data:

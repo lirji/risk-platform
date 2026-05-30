@@ -18,8 +18,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class SourceRuleSetBinding {
 
-    /** 默认规则集: 黑名单 + 阈值, 所有来源至少都过这两组。 */
-    private static final List<String> DEFAULT_RULESETS = List.of("blacklist", "threshold");
+    /** 默认规则集: 黑名单 + 阈值 + 模型分, 所有来源至少都过这三组。 */
+    private static final List<String> DEFAULT_RULESETS = List.of("blacklist", "threshold", "model");
 
     private final Map<String, List<String>> bindings = new ConcurrentHashMap<>();
 

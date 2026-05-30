@@ -6,7 +6,6 @@ import com.lrj.risk.feature.FeatureSnapshot;
 import com.lrj.risk.fraud.engine.model.RiskAssessment;
 import com.lrj.risk.fraud.engine.model.TransactionEvent;
 
-import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.rule.Agenda;
 import org.springframework.stereotype.Service;
@@ -24,18 +23,23 @@ public class FraudEngineService {
     /** 失控护栏: 单次决策最多触发的规则数上限。 */
     private static final int MAX_FIRES = 1000;
 
-    private final KieContainer kieContainer;
+    private final KieContainerHolder containerHolder;
     private final SourceRuleSetBinding binding;
+    private final ModelScorer modelScorer;
 
-    public FraudEngineService(KieContainer fraudKieContainer, SourceRuleSetBinding binding) {
-        this.kieContainer = fraudKieContainer;
+    public FraudEngineService(KieContainerHolder containerHolder, SourceRuleSetBinding binding,
+                              ModelScorer modelScorer) {
+        this.containerHolder = containerHolder;
         this.binding = binding;
+        this.modelScorer = modelScorer;
     }
 
     public RiskAssessment evaluate(TransactionEvent txn, FeatureSnapshot features) {
-        KieSession session = kieContainer.newKieSession("fraudSession");
+        KieSession session = containerHolder.get().newKieSession("fraudSession");
         try {
             RiskAssessment assessment = new RiskAssessment();
+            // 双轨决策(PLAN §4.3): 进引擎前算好模型分塞进 Fact, 规则只读不算
+            assessment.setFraudScore(modelScorer.score(txn, features));
             session.insert(txn);
             session.insert(features);
             session.insert(assessment);
