@@ -4,9 +4,9 @@ services:
   mysql:
     image: mysql:8.0
     container_name: risk-mysql
-    # 宿主机映射 13306, 避开本地已占用的 3306 (容器内仍 3306)
+    # 宿主机映射 13307, 避开本地已占用的 3306 (容器内仍 3306)
     ports:
-      - "13306:3306"
+      - "13307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: root123
       MYSQL_DATABASE: risk_platform
@@ -90,7 +90,66 @@ services:
     environment:
       TZ: Asia/Shanghai
 
+  # ===== 离线层 Hive 栈 (架构 A): profile=hive, 由 ./scripts/setup-hive.sh 拉起 =====
+  # 不进默认 `docker compose up`, 避免污染实时栈。MinIO/S3A 当数据存储(存算分离, 不上 HDFS)。
+
+  # 对象存储: 离线宽表 parquet 落 s3a://warehouse/...; 控制台 http://localhost:9001 (minioadmin/minioadmin)
+  minio:
+    image: minio/minio:latest
+    container_name: risk-minio
+    profiles: ["hive"]
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+
+  # 一次性建桶 warehouse, 完成即退出
+  minio-init:
+    image: minio/mc:latest
+    container_name: risk-minio-init
+    profiles: ["hive"]
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do echo 'waiting minio...'; sleep 2; done;
+      mc mb local/warehouse || true;
+      echo 'bucket warehouse ready';
+      "
+
+  # Hive Metastore (thrift://localhost:9083): 只管元数据, 后端复用 risk-mysql 的 metastore_db。
+  # 需 mysql 驱动 jar -> ./scripts/setup-hive.sh 先把它备到 ./libs/mysql-connector-j.jar。
+  # 表数据走 Spark 侧 s3a (EXTERNAL 表), metastore 不碰 S3。
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: risk-hive-metastore
+    profiles: ["hive"]
+    depends_on:
+      - mysql
+    ports:
+      - "9083:9083"
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: mysql
+      # 把镜像自带的 S3A jar(在 tools/lib, 默认不在 classpath) 挂上来, 让 metastore 能解析 s3a:// 表目录
+      HIVE_AUX_JARS_PATH: /opt/hadoop/share/hadoop/tools/lib/hadoop-aws-3.3.6.jar,/opt/hadoop/share/hadoop/tools/lib/aws-java-sdk-bundle-1.12.367.jar
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=com.mysql.cj.jdbc.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:mysql://mysql:3306/metastore_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+        -Djavax.jdo.option.ConnectionUserName=root
+        -Djavax.jdo.option.ConnectionPassword=root123
+    volumes:
+      - ./libs/mysql-connector-j.jar:/opt/hive/lib/mysql-connector-j.jar:ro
+      # S3A 配置(指向 minio:9000), 供 metastore 在 s3a 上建/删表目录
+      - ./hive/conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+
 volumes:
   mysql-data:
   redis-data:
   es-data:
+  minio-data:

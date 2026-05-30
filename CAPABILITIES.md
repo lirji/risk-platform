@@ -44,6 +44,8 @@
 | 高可用 | Sentinel 限流/熔断/降级 | fraud-gateway | ✅ |
 | 可观测 | Prometheus 指标端点 | fraud-gateway | ✅ |
 | 运维 | DolphinScheduler 模型重训调度 | docker-compose + scripts | ✅ |
+| 离线评级 | 任务驱动 Spark 评分评级引擎 (架构A核心) | rating-engine + MySQL 配置中心 | ✅ |
+| 离线数仓 | Hive Metastore + MinIO/S3A 存算分离离线宽表 (架构A输入源) | rating-engine/fraud-model-train + docker(hive profile) | ✅ |
 
 ---
 
@@ -149,6 +151,27 @@
 
 ---
 
+## 7.5 离线评分评级引擎 (rating-engine, 架构 A 核心)
+
+任务驱动的 Spark 批处理评级引擎，落地用户架构图。**配置即数据**：模型/评分规则/评级阈值/任务全存 MySQL，引擎运行时自主读取，改库不改代码。
+
+| 环节 | 实现 | 说明 |
+|------|------|------|
+| ① 领任务+读配置 | `ConfigRepository` (JDBC) | 领最早 PENDING 任务 + 加载模型(规则+阈值) |
+| ② 跨源关联标签 | Hive `spark.table` JOIN `EsClient.fetchAll` | Hive 宽表 `risk_dw.dwd_cust_feature`(历史聚合) JOIN ES `cust-tags`(行为标签) on cust_id |
+| ③ 评分评级 | Spark 分布式 `map` + `RatingModel` | 模型随闭包分发到 executor，分布式评分；总分→评级 |
+| ④ 写风险库 | `EsClient.bulkIndex` | 写 `es-risk-store`(分数+评级+命中规则)，任务置 DONE |
+
+**配置表**(`sql/rating-config-schema.sql`)：`t_rating_task`(任务) / `t_score_rule`(评分规则:标签字段·比较符·阈值·加分) / `t_rating_grade`(评级阈值:总分→A/B/C/D)。
+
+**Hive 离线层**(`HIVE-INTEGRATION-PLAN.md`)：Hive Metastore(元数据,后端 MySQL) + MinIO/S3A(parquet 数据) 存算分离，不上 HDFS。`HiveSeedJob` 建 `risk_dw.dwd_cust_feature` / `dwd_fraud_train` 两表。
+
+**实跑**：`./scripts/setup-hive.sh`(建宽表) → `./scripts/setup-rating.sh`(灌配置+造行为标签) → `./mvnw -pl rating-engine exec:exec`。
+验证结果：Hive 宽表 JOIN ES → C001→100分D级 / C002→30分B级 / C003→0分A级，任务 PENDING→DONE。
+
+> ES 读写走轻量 HTTP REST(`EsClient`)，不引 elasticsearch-spark 连接器(避其与 Spark 4 兼容问题)。
+> 与实时拦截(架构B)的关系见 [ARCHITECTURE-COMPARISON.md](ARCHITECTURE-COMPARISON.md)：A 离线评级打标，B 实时逐笔拦截，两层互补。
+
 ## 8. REST 接口一览 (fraud-gateway, :8082)
 
 | 方法 | 路径 | 说明 |
@@ -171,13 +194,15 @@
 | `fraud-gateway` | 同步决策接入层 + 异步发 Kafka + Sentinel | Spring Boot 可执行 jar (:8082) |
 | `profiling-realtime` | 实时特征(轻量消费者) | Spring Boot 可执行 jar |
 | `profiling-realtime-flink` | 实时特征(Flink 平替) | jar (exec:exec 运行) |
-| `fraud-model-train` | Spark 随机森林训练 → PMML | jar (exec:exec 运行) |
+| `fraud-model-train` | 读 Hive 训练宽表 → Spark 随机森林训练 → PMML | jar (exec:exec 运行) |
+| `rating-engine` | 离线评分评级引擎(架构A): 任务驱动 Spark 作业, 读 MySQL 配置→Hive 宽表 JOIN ES 标签→评分评级→写 es 风险库; 含 `HiveSeedJob` 建宽表 | jar (exec:exec 运行) |
 
 ---
 
 ## 10. 与生产的差距 (已知简化项)
 
-- 训练用合成数据演示管道；生产需 Hive 真实案件标签 + 处理样本不平衡
+- 训练样本已读自 Hive 宽表(`risk_dw.dwd_fraud_train`)，但内容是合成数据演示管道；生产换成真实案件标签 + 处理样本不平衡即可，作业代码不变
+- Hive 离线层为本地半真形态(Metastore + MinIO/S3A，不上 HDFS/YARN，Spark 本地 `local[*]`)；生产为真集群
 - 来源↔规则集绑定为内存 Map；生产需 MySQL `t_source_ruleset_bind` + 管理后台
 - 规则热发布为 HTTP 直推；生产正解为 KieScanner + KJAR + 审核流
 - ES 单节点 replicas=0；生产需 ILM 冷热分层 + 多副本

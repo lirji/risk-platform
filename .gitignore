@@ -4,3 +4,5 @@ target/
 .idea/
 *.iml
 .DS_Store
+# Hive metastore 用的 mysql 驱动, 由 scripts/setup-hive.sh 运行时生成
+libs/

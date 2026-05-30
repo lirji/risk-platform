@@ -1,6 +1,6 @@
 # risk-platform
 
-实时交易反欺诈 + 客户画像平台。完整规划见 [`PLAN.md`](PLAN.md)，能力清单见 [`CAPABILITIES.md`](CAPABILITIES.md)。
+实时交易反欺诈 + 客户画像平台。完整规划见 [`PLAN.md`](PLAN.md)，能力清单见 [`CAPABILITIES.md`](CAPABILITIES.md)，随机森林理论与反欺诈应用见 [`RANDOM-FOREST-THEORY.md`](RANDOM-FOREST-THEORY.md)。
 
 当前为 **最小可跑核心 (M1+M4 雏形)**：一笔交易经接入层 → 拉特征 → Drools 规则引擎 → 返回风险等级，端到端跑通。
 
@@ -12,8 +12,9 @@
 | `fraud-engine` | Drools 规则引擎：场景规则集(agenda-group) + 来源绑定 + 决策聚合 |
 | `fraud-gateway` | 同步决策接入层 (Spring Boot, 8082)：拉特征 + 调引擎 + 返回风险等级 + 决策后异步发 Kafka |
 | `profiling-realtime` | 实时特征计算：消费 Kafka 交易流 → Redis 原子算窗口特征(当日累计/笔数、新设备) → 写回 `feature:{账号}` |
-| `fraud-model-train` | 离线训练：Spark MLlib 随机森林 → 评估(AUC) → 导出 PMML 到 fraud-engine 资源目录 |
+| `fraud-model-train` | 离线训练：读 Hive 训练宽表 `risk_dw.dwd_fraud_train` → Spark MLlib 随机森林 → 评估(AUC) → 导出 PMML 到 fraud-engine 资源目录 |
 | `profiling-realtime-flink` | 实时特征的 **Flink 平替**：DataStream 消费 Kafka → 键控状态聚合 → 写 Redis（与 profiling-realtime 二选一）|
+| `rating-engine` | **离线评分评级引擎(架构A)**：任务驱动 Spark 作业，读 MySQL 配置 → Hive 宽表 JOIN ES 标签 → 评分评级 → 写 es 风险库 |
 | `logstash/` (配置) | 交易检索链路：Logstash 消费同一交易流 → 清洗+脱敏 → ES 时间滚动索引 |
 
 fraud-engine 内 `ModelScorer` 用 jpmml-evaluator 加载该 PMML 做线上推理，`fraudScore` 进 Drools `model` 规则集做**双轨决策**(规则 + 模型分，§4.3)。
@@ -108,7 +109,11 @@ docker exec -it risk-redis redis-cli HSET feature:ACC003 blacklist true
 与规则共同裁决。大额跨行交易示例 → `fraudScore≈0.66` 命中 `MODEL_MID_RISK` + `LARGE_TRANSFER`，聚合 HIGH。
 
 > 技术栈：**Spark 4.0 训练 + pmml-sparkml 3.2.10 导出 + jpmml-evaluator 推理**（Java 21 原生，避开 MLeap）。
-> 合成数据欺诈率偏高(仅演示训练→服务管道)，生产用 Hive 真实案件标签 + 处理样本不平衡。
+> 训练样本读自 **Hive 宽表 `risk_dw.dwd_fraud_train`**（MinIO/S3A）；现以合成数据灌入演示训练→服务管道，
+> 生产换成 Hive 真实案件标签 + 处理样本不平衡即可，作业代码不变。
+
+> 决策树/随机森林理论、反欺诈规则如何在森林中体现、规则与模型双轨并行及拓展点，详见
+> [RANDOM-FOREST-THEORY.md](RANDOM-FOREST-THEORY.md)。
 
 ## 交易检索 (Logstash → ES, §2.5 / §2.6)
 
@@ -178,6 +183,24 @@ docker compose up -d dolphinscheduler   # UI http://localhost:12345/dolphinsched
 
 在 UI 建项目 → 工作流 → **Shell 任务**执行 `scripts/retrain.sh`（worker 需挂载本仓库 + JDK21），
 设 cron（如每周）定时重训随机森林并导出新 PMML。`scripts/retrain.sh` 即重训命令。
+
+### 离线评分评级引擎 (架构A, rating-engine)
+
+任务驱动的 Spark 批处理评级引擎，配置(模型/规则/阈值/任务)全存 MySQL，改库不改代码。
+输入为 **Hive 离线宽表 JOIN ES 行为标签**（Hive Metastore + MinIO/S3A 存算分离，不上 HDFS）。
+
+```bash
+docker compose up -d mysql elasticsearch
+./scripts/setup-hive.sh                         # 拉起 MinIO+Hive Metastore, 建 risk_dw 库+宽表并灌数(落 S3A)
+./scripts/setup-rating.sh                       # 灌 MySQL 配置中心 + 造 ES 行为标签源 cust-tags
+./mvnw -q -pl rating-engine -am compile
+./mvnw -q -pl rating-engine exec:exec           # 领 PENDING 任务 → Hive JOIN ES → Spark 评分评级 → 写 es-risk-store
+curl -s "localhost:9200/es-risk-store/_search?pretty"   # 看评级结果(分数+评级+命中规则)
+```
+
+验证结果：Hive 宽表 JOIN ES → C001→100分D级 / C002→30分B级 / C003→0分A级，MySQL 任务 PENDING→DONE。
+详见 [ARCHITECTURE-COMPARISON.md](ARCHITECTURE-COMPARISON.md)（架构A离线评级 vs 架构B实时拦截）、
+[HIVE-INTEGRATION-PLAN.md](HIVE-INTEGRATION-PLAN.md)（Hive Metastore + MinIO/S3A 落地）。
 
 ## 监控
 

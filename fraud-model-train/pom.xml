@@ -18,6 +18,8 @@
     <properties>
         <spark.version>4.0.0</spark.version>
         <scala.binary>2.13</scala.binary>
+        <!-- 对齐 Spark 4.0 自带 hadoop-client (3.4.1); S3A 在 Hadoop 3.4 已用 AWS SDK v2 -->
+        <hadoop.version>3.4.1</hadoop.version>
     </properties>
 
     <dependencyManagement>
@@ -53,6 +55,26 @@
             <groupId>org.jpmml</groupId>
             <artifactId>pmml-sparkml</artifactId>
             <version>3.2.10</version>
+        </dependency>
+
+        <!-- Hive 支持: 读 risk_dw.dwd_fraud_train 训练宽表 (架构 A 离线层) -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-hive_${scala.binary}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- S3A: 读写 MinIO 上的 parquet. hadoop-common/auth 由 Spark 的 hadoop-client 提供, 排除避免重复类 -->
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-aws</artifactId>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-common</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 

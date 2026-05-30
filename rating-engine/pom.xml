@@ -18,6 +18,10 @@
     <properties>
         <spark.version>4.0.0</spark.version>
         <scala.binary>2.13</scala.binary>
+        <!-- 对齐 Spark 4.0 自带 hadoop-client (3.4.1); S3A 在 Hadoop 3.4 已用 AWS SDK v2 -->
+        <hadoop.version>3.4.1</hadoop.version>
+        <!-- exec:exec 跑的主类, 默认评级引擎; seeding 时 -DratingMainClass=...HiveSeedJob 覆盖 -->
+        <ratingMainClass>com.lrj.risk.rating.RatingEngineJob</ratingMainClass>
     </properties>
 
     <dependencyManagement>
@@ -45,6 +49,26 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary}</artifactId>
             <version>${spark.version}</version>
+        </dependency>
+
+        <!-- Hive 支持: 读 risk_dw.dwd_cust_feature 离线宽表, 与 ES 标签 JOIN -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-hive_${scala.binary}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- S3A: 读写 MinIO 上的 parquet. hadoop-common 由 Spark 的 hadoop-client 提供, 排除避免重复类 -->
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-aws</artifactId>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-common</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- MySQL 配置中心: JDBC 读任务/规则/阈值 -->
@@ -89,7 +113,7 @@
                         <argument>--add-opens=java.base/sun.security.action=ALL-UNNAMED</argument>
                         <argument>-classpath</argument>
                         <classpath/>
-                        <argument>com.lrj.risk.rating.RatingEngineJob</argument>
+                        <argument>${ratingMainClass}</argument>
                     </arguments>
                 </configuration>
             </plugin>
