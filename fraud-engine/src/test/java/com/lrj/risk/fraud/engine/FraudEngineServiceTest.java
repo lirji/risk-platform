@@ -5,10 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 
-import com.lrj.risk.feature.FeatureSnapshot;
-import com.lrj.risk.fraud.engine.model.RiskAssessment;
-import com.lrj.risk.fraud.engine.model.RiskLevel;
-import com.lrj.risk.fraud.engine.model.TransactionEvent;
+import com.lrj.risk.feature.domain.FeatureSnapshot;
+import com.lrj.risk.fraud.application.FraudDecisionService;
+import com.lrj.risk.fraud.domain.model.RiskAssessment;
+import com.lrj.risk.fraud.domain.model.RiskLevel;
+import com.lrj.risk.fraud.domain.model.TransactionEvent;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -19,16 +20,15 @@ import org.junit.jupiter.api.Test;
  */
 class FraudEngineServiceTest {
 
-    private static FraudEngineService engine;
+    private static FraudDecisionService engine;
 
     @BeforeAll
     static void setUp() {
         // 走与 @Bean 同一条构建路径 (程序化 KieFileSystem), 不起 Spring 容器。
         // 模型分用未初始化的 ModelScorer(恒返回 0), 隔离测试规则逻辑。
-        engine = new FraudEngineService(
-                new KieContainerHolder(),
-                new SourceRuleSetBinding(),
-                new ModelScorer());
+        engine = new FraudDecisionService(
+                new DroolsRuleEvaluator(new KieContainerHolder()),
+                new SourceRuleSetBinding(), (transaction, features) -> 0d);
     }
 
     private TransactionEvent txn(String bizType, long amount) {

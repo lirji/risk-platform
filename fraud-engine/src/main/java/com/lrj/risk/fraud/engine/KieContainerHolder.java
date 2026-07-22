@@ -2,6 +2,8 @@ package com.lrj.risk.fraud.engine;
 
 import org.kie.api.runtime.KieContainer;
 import org.springframework.stereotype.Component;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 持有当前生效的 Drools 容器, 支持热替换 (规则热发布)。
@@ -12,13 +14,32 @@ import org.springframework.stereotype.Component;
 @Component
 public class KieContainerHolder {
 
-    private volatile KieContainer container = DroolsConfig.buildFraudKieContainer();
+    private volatile KieContainer baseline = DroolsConfig.buildFraudKieContainer();
+    private final Map<String, KieContainer> deployments = new ConcurrentHashMap<>();
 
     public KieContainer get() {
+        return baseline;
+    }
+
+    public KieContainer get(String sourceId, String version) {
+        if ("baseline-1".equals(version)) return baseline;
+        KieContainer container = deployments.get(key(sourceId, version));
+        if (container == null) {
+            throw new IllegalStateException("rule runtime is not deployed for sourceId=" + sourceId
+                    + ", version=" + version);
+        }
         return container;
     }
 
     public void replace(KieContainer newContainer) {
-        this.container = newContainer;
+        this.baseline = newContainer;
+    }
+
+    public void install(String sourceId, String version, KieContainer container) {
+        deployments.put(key(sourceId, version), container);
+    }
+
+    private String key(String sourceId, String version) {
+        return sourceId + "\u0000" + version;
     }
 }

@@ -1,0 +1,50 @@
+{
+  "id": null,
+  "uid": "risk-platform-overview",
+  "title": "Risk Platform Overview",
+  "tags": ["risk", "fraud"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {"list": []},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Decision P99 / P999 (seconds)", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"fraud-gateway\",uri=\"/api/v1/risk/evaluations\"}[5m])))", "legendFormat": "P99"},
+      {"refId": "B", "expr": "histogram_quantile(0.999, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"fraud-gateway\",uri=\"/api/v1/risk/evaluations\"}[5m])))", "legendFormat": "P999"}
+    ]},
+    {"id": 2, "type": "timeseries", "title": "HTTP throughput by status", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "sum by (status) (rate(http_server_requests_seconds_count[5m]))", "legendFormat": "{{status}}"}
+    ]},
+    {"id": 3, "type": "timeseries", "title": "Kafka consumer lag", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "sum by (consumergroup, topic) (kafka_consumergroup_lag)", "legendFormat": "{{consumergroup}} / {{topic}}"}
+    ]},
+    {"id": 4, "type": "stat", "title": "Service health", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "up{job=~\"fraud-gateway|risk-admin|decision-log\"}", "legendFormat": "{{job}}"}
+    ]},
+    {"id": 5, "type": "timeseries", "title": "Decision stage average latency", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "sum by (stage) (rate(risk_decision_stage_duration_seconds_sum[5m])) / clamp_min(sum by (stage) (rate(risk_decision_stage_duration_seconds_count[5m])), 0.001)", "legendFormat": "{{stage}}"}
+    ]},
+    {"id": 6, "type": "timeseries", "title": "Decision result rate", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "sum by (risk_level, action, degraded) (rate(risk_decision_total[5m]))", "legendFormat": "{{risk_level}} / {{action}} / degraded={{degraded}}"}
+    ]},
+    {"id": 7, "type": "gauge", "title": "Rule hit ratio", "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "sum(rate(risk_rule_hit_total{hit=\"true\"}[5m])) / clamp_min(sum(rate(risk_rule_hit_total[5m])), 0.001)", "legendFormat": "hit ratio"}
+    ]},
+    {"id": 8, "type": "timeseries", "title": "Model score distribution", "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(risk_model_score_bucket[5m])))", "legendFormat": "P50"},
+      {"refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(risk_model_score_bucket[5m])))", "legendFormat": "P95"}
+    ]},
+    {"id": 9, "type": "stat", "title": "Current dead events", "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "risk_dead_events", "legendFormat": "{{kind}}"}
+    ]},
+    {"id": 10, "type": "stat", "title": "Rating jobs by status", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "risk_rating_jobs", "legendFormat": "{{status}}"}
+    ]},
+    {"id": 11, "type": "stat", "title": "Model deployment and PSI", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "targets": [
+      {"refId": "A", "expr": "risk_model_deployments", "legendFormat": "models / {{status}}"},
+      {"refId": "B", "expr": "risk_model_psi_max", "legendFormat": "max PSI"}
+    ]}
+  ]
+}

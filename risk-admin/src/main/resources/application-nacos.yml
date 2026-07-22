@@ -1,0 +1,14 @@
+spring:
+  config:
+    import:
+      - "optional:nacos:risk-admin.yml?group=RISK_PLATFORM&refreshEnabled=true"
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD}
+      config:
+        import-check:
+          enabled: true
+
+# Nacos 不可用时，application.yml 中的保守默认值继续生效。

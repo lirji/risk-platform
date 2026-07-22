@@ -1,0 +1,45 @@
+groups:
+  - name: risk-platform
+    rules:
+      - alert: RiskDecisionP99LatencyHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job="fraud-gateway",uri="/api/v1/risk/evaluations"}[5m]))) > 0.05
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "Risk decision P99 exceeds 50 ms"
+          runbook: "docs/runbooks/operations.md#decision-latency"
+      - alert: RiskDecisionP999LatencyHigh
+        expr: histogram_quantile(0.999, sum by (le) (rate(http_server_requests_seconds_bucket{job="fraud-gateway",uri="/api/v1/risk/evaluations"}[5m]))) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Risk decision P999 exceeds 100 ms"}
+      - alert: RiskServiceErrorRateHigh
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 1) > 0.01
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Risk platform HTTP 5xx rate exceeds 1%"}
+      - alert: RiskKafkaConsumerLagHigh
+        expr: sum(kafka_consumergroup_lag) by (consumergroup, topic) > 10000
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Kafka consumer lag is growing"}
+      - alert: RiskOutboxDeadEvents
+        expr: risk_dead_events{kind="outbox"} > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: "Dead outbox events require authorized replay"}
+      - alert: RiskKafkaDeadLetterEvents
+        expr: risk_dead_events{kind="kafka_dlt"} > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: "Kafka DLT events require diagnosis and authorized replay"}
+      - alert: RiskRatingJobsFailed
+        expr: risk_rating_jobs{status="FAILED"} > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Rating jobs are waiting for failure diagnosis or retry"}
+      - alert: RiskModelPopulationDrift
+        expr: risk_model_psi_max > 0.25
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Recorded model PSI exceeds 0.25"}

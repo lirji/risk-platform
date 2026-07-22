@@ -1,0 +1,14 @@
+spring:
+  config:
+    import:
+      - "optional:nacos:fraud-gateway.yml?group=RISK_PLATFORM&refreshEnabled=true"
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD}
+      config:
+        import-check:
+          enabled: true
+
+# 外部配置只覆盖时延、批量、阈值等可变参数；密钥仍从环境变量/Secret 注入。

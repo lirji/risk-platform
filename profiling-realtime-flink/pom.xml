@@ -25,6 +25,10 @@
             <groupId>com.lrj.risk</groupId>
             <artifactId>common-feature</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.lrj.risk</groupId>
+            <artifactId>platform-contracts</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.flink</groupId>
@@ -54,9 +58,18 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+        <dependency>
             <groupId>redis.clients</groupId>
             <artifactId>jedis</artifactId>
             <version>5.1.5</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

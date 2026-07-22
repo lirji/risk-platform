@@ -8,11 +8,15 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
     consumer:
-      group-id: realtime-feature
+      group-id: realtime-feature-v1
       auto-offset-reset: earliest
+      enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        # 信任消息体所在包并指定默认反序列化类型 (与 gateway 同一 TransactionMessage)
-        spring.json.trusted.packages: com.lrj.risk.common.event
-        spring.json.value.default.type: com.lrj.risk.common.event.TransactionMessage
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+risk:
+  feature:
+    zone: ${FEATURE_TIME_ZONE:UTC}

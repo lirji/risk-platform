@@ -1,5 +1,5 @@
 RuleSet,rules.fraud
-Import,"com.lrj.risk.fraud.engine.model.TransactionEvent,com.lrj.risk.fraud.engine.model.RiskAssessment"
+Import,"com.lrj.risk.fraud.domain.model.TransactionEvent,com.lrj.risk.fraud.domain.model.RiskAssessment"
 ,,,,,
 RuleTable AmountTier,,,,,
 CONDITION,CONDITION,CONDITION,CONDITION,ACTION,AGENDA-GROUP

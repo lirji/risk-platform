@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://risk-platform.local/schema/decision.v1.schema.json",
+  "title": "decision.v1",
+  "type": "object",
+  "required": ["metadata", "decisionId", "riskLevel", "action", "fraudScore", "hitRules", "featureSnapshot", "ruleVersion", "modelVersion", "costMs"],
+  "properties": {
+    "decisionId": { "type": "string", "minLength": 1 },
+    "riskLevel": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+    "action": { "enum": ["ALLOW", "CHALLENGE", "REVIEW", "REJECT"] },
+    "fraudScore": { "type": "number", "minimum": 0, "maximum": 1 },
+    "hitRules": { "type": "array" },
+    "featureSnapshot": { "type": "object", "additionalProperties": { "type": "string" } },
+    "ruleVersion": { "type": "string", "minLength": 1 },
+    "modelVersion": { "type": "string", "minLength": 1 },
+    "costMs": { "type": "integer", "minimum": 0 }
+  }
+}

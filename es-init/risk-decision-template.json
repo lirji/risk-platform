@@ -1,0 +1,21 @@
+{
+  "index_patterns": ["risk-decisions-*"],
+  "template": {
+    "settings": {"index.lifecycle.name": "risk-decision-retention", "number_of_shards": 1, "number_of_replicas": 0},
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "decisionId": {"type": "keyword"},
+        "metadata": {"properties": {"eventId": {"type": "keyword"}, "schemaVersion": {"type": "integer"}, "occurredAt": {"type": "date"}, "sourceId": {"type": "keyword"}, "txnId": {"type": "keyword"}, "correlationId": {"type": "keyword"}}},
+        "riskLevel": {"type": "keyword"},
+        "action": {"type": "keyword"},
+        "fraudScore": {"type": "double"},
+        "ruleVersion": {"type": "keyword"},
+        "modelVersion": {"type": "keyword"},
+        "costMs": {"type": "long"},
+        "hitRules": {"type": "nested", "properties": {"ruleCode": {"type": "keyword"}, "ruleName": {"type": "keyword"}, "score": {"type": "integer"}, "reason": {"type": "keyword", "ignore_above": 512}}},
+        "featureSnapshot": {"type": "object", "dynamic": false}
+      }
+    }
+  }
+}

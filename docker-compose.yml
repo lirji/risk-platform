@@ -6,19 +6,25 @@ services:
     container_name: risk-mysql
     # 宿主机映射 13307, 避开本地已占用的 3306 (容器内仍 3306)
     ports:
-      - "13307:3306"
+      - "${MYSQL_HOST_PORT:-13307}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: risk_platform
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
 
   redis:
     image: redis:7
     container_name: risk-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
 
@@ -26,14 +32,14 @@ services:
     image: apache/kafka:3.7.0
     container_name: risk-kafka
     ports:
-      - "9092:9092"
+      - "${KAFKA_HOST_PORT:-9092}:9092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       # 两个客户端 listener: PLAINTEXT 给宿主机进程(localhost:9092),
       # INTERNAL 给 docker 网络内的容器(kafka:29092, 如 Logstash)
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:${KAFKA_HOST_PORT:-9092},INTERNAL://kafka:29092
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -47,7 +53,7 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
     container_name: risk-es
     ports:
-      - "9200:9200"
+      - "${ELASTICSEARCH_HOST_PORT:-9200}:9200"
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
@@ -61,7 +67,7 @@ services:
     depends_on:
       - elasticsearch
     ports:
-      - "5601:5601"
+      - "${KIBANA_HOST_PORT:-5601}:5601"
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
 
@@ -75,36 +81,347 @@ services:
       # 容器内走 INTERNAL listener 连 Kafka
       KAFKA_BOOTSTRAP: kafka:29092
       ES_HOSTS: http://elasticsearch:9200
-      MASK_SALT: risk-platform-demo-salt   # HMAC 脱敏盐, 生产用密管下发
+      MASK_SALT: ${MASK_SALT}
       XPACK_MONITORING_ENABLED: "false"
       LS_JAVA_OPTS: "-Xms256m -Xmx256m"
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
 
-  # 模型重训调度: 单容器版 (内嵌 H2+ZK), UI http://localhost:12345/dolphinscheduler/ui (admin/dolphinscheduler123)
+  # ===== 应用层: profile=apps =====
+  fraud-gateway:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: fraud-gateway/Dockerfile
+    ports: ["${FRAUD_GATEWAY_HOST_PORT:-8082}:8082"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_started}
+      kafka: {condition: service_started}
+      skywalking-agent: {condition: service_completed_successfully}
+    environment:
+      SPRING_PROFILES_ACTIVE: secure,nacos
+      DB_URL: jdbc:mysql://mysql:3306/risk_platform?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+      SPRING_FLYWAY_BASELINE_VERSION: "0"
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:29092
+      CASDOOR_PUBLIC_URL: ${CASDOOR_PUBLIC_URL:-http://localhost:8000}
+      CASDOOR_INTERNAL_URL: ${CASDOOR_INTERNAL_URL:-http://host.docker.internal:8000}
+      CASDOOR_ORGANIZATION: ${CASDOOR_ORGANIZATION:-risk-platform}
+      CASDOOR_EVALUATION_AUDIENCES: ${CASDOOR_EVALUATION_AUDIENCES:-risk-bank-client}
+      CASDOOR_RUNTIME_AUDIENCES: ${CASDOOR_RUNTIME_AUDIENCES:-risk-runtime-client}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD}
+      PII_HMAC_KEY: ${PII_HMAC_KEY}
+      MODEL_ARTIFACT_PREFIX: http://minio:9000/models/
+      JAVA_TOOL_OPTIONS: ${APP_JAVA_TOOL_OPTIONS:--javaagent:/skywalking/agent/skywalking-agent.jar}
+      SW_LOGGING_OUTPUT: CONSOLE
+      SW_AGENT_NAME: fraud-gateway
+      SW_AGENT_COLLECTOR_BACKEND_SERVICES: skywalking-oap:11800
+    volumes:
+      - skywalking-agent:/skywalking/agent:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+
+  risk-admin:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: risk-admin/Dockerfile
+    ports: ["${RISK_ADMIN_HOST_PORT:-8083}:8083"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_started}
+      fraud-gateway: {condition: service_healthy}
+      risk-spicedb: {condition: service_started}
+      skywalking-agent: {condition: service_completed_successfully}
+    environment:
+      SPRING_PROFILES_ACTIVE: secure,nacos
+      DB_URL: jdbc:mysql://mysql:3306/risk_platform?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+      SPRING_FLYWAY_BASELINE_VERSION: "0"
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:29092
+      DLT_LISTENER_ENABLED: "true"
+      RISK_GATEWAY_URL: http://fraud-gateway:8082
+      CASDOOR_PUBLIC_URL: ${CASDOOR_PUBLIC_URL:-http://localhost:8000}
+      CASDOOR_INTERNAL_URL: ${CASDOOR_INTERNAL_URL:-http://host.docker.internal:8000}
+      CASDOOR_ORGANIZATION: ${CASDOOR_ORGANIZATION:-risk-platform}
+      CASDOOR_AUDIENCES: ${CASDOOR_AUDIENCES:-ragshared0client00000001-org-risk-platform}
+      CASDOOR_SERVICE_CLIENT_ID: ${CASDOOR_SERVICE_CLIENT_ID}
+      CASDOOR_SERVICE_CLIENT_SECRET: ${CASDOOR_SERVICE_CLIENT_SECRET}
+      AUTHZ_SERVER_URL: ${AUTHZ_SERVER_URL:-http://host.docker.internal:8212}
+      AUTHZ_CLIENT_TOKEN: ${AUTHZ_CLIENT_TOKEN}
+      AUTHZ_CLIENT_ENABLED: "true"
+      RISK_AUTHZ_MODE: enforce
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD}
+      JAVA_TOOL_OPTIONS: ${APP_JAVA_TOOL_OPTIONS:--javaagent:/skywalking/agent/skywalking-agent.jar}
+      SW_LOGGING_OUTPUT: CONSOLE
+      SW_AGENT_NAME: risk-admin
+      SW_AGENT_COLLECTOR_BACKEND_SERVICES: skywalking-oap:11800
+    volumes:
+      - skywalking-agent:/skywalking/agent:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+
+  fraud-decision-log:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: fraud-decision-log/Dockerfile
+    ports: ["${DECISION_LOG_HOST_PORT:-8084}:8084"]
+    depends_on:
+      kafka: {condition: service_started}
+      elasticsearch: {condition: service_started}
+      skywalking-agent: {condition: service_completed_successfully}
+    environment:
+      SPRING_PROFILES_ACTIVE: secure
+      KAFKA_BOOTSTRAP: kafka:29092
+      ES_URL: http://elasticsearch:9200
+      CASDOOR_PUBLIC_URL: ${CASDOOR_PUBLIC_URL:-http://localhost:8000}
+      CASDOOR_INTERNAL_URL: ${CASDOOR_INTERNAL_URL:-http://host.docker.internal:8000}
+      CASDOOR_ORGANIZATION: ${CASDOOR_ORGANIZATION:-risk-platform}
+      CASDOOR_AUDIENCES: ${CASDOOR_AUDIENCES:-ragshared0client00000001-org-risk-platform}
+      JAVA_TOOL_OPTIONS: ${APP_JAVA_TOOL_OPTIONS:--javaagent:/skywalking/agent/skywalking-agent.jar}
+      SW_LOGGING_OUTPUT: CONSOLE
+      SW_AGENT_NAME: fraud-decision-log
+      SW_AGENT_COLLECTOR_BACKEND_SERVICES: skywalking-oap:11800
+    volumes:
+      - skywalking-agent:/skywalking/agent:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  profiling-realtime:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: profiling-realtime/Dockerfile
+    depends_on:
+      kafka: {condition: service_started}
+      redis: {condition: service_started}
+      skywalking-agent: {condition: service_completed_successfully}
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      REDIS_HOST: redis
+      JAVA_TOOL_OPTIONS: ${APP_JAVA_TOOL_OPTIONS:--javaagent:/skywalking/agent/skywalking-agent.jar}
+      SW_LOGGING_OUTPUT: CONSOLE
+      SW_AGENT_NAME: profiling-realtime
+      SW_AGENT_COLLECTOR_BACKEND_SERVICES: skywalking-oap:11800
+    volumes:
+      - skywalking-agent:/skywalking/agent:ro
+
+  risk-console:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: risk-console/Dockerfile
+      args:
+        VITE_AUTH_MODE: ${VITE_AUTH_MODE:-oidc}
+        VITE_CASDOOR_ISSUER: ${VITE_CASDOOR_ISSUER:-http://localhost:8000}
+        VITE_CASDOOR_CLIENT_ID: ${VITE_CASDOOR_CLIENT_ID:-ragshared0client00000001-org-risk-platform}
+        VITE_CASDOOR_ORGANIZATION: ${VITE_CASDOOR_ORGANIZATION:-risk-platform}
+        VITE_CASDOOR_SCOPE: ${VITE_CASDOOR_SCOPE:-openid profile offline_access}
+    ports: ["${RISK_CONSOLE_HOST_PORT:-5173}:8080"]
+    depends_on:
+      risk-admin: {condition: service_healthy}
+    environment:
+      CASDOOR_PUBLIC_URL: ${CASDOOR_PUBLIC_URL:-http://localhost:8000}
+
+  # ===== 关系授权数据面: profile=authz/apps =====
+  # 身份/SSO 由 auth-platform 的 Casdoor 提供；这里只有 risk 业务关系数据。
+  risk-authz-postgres:
+    image: postgres:16
+    profiles: ["authz", "apps"]
+    environment:
+      POSTGRES_USER: risk_authz
+      POSTGRES_PASSWORD: ${RISK_AUTHZ_PG_PASSWORD}
+      POSTGRES_DB: spicedb
+    ports: ["${RISK_AUTHZ_PG_PORT:-15434}:5432"]
+    volumes:
+      - risk-authz-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U risk_authz -d spicedb"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  risk-spicedb-migrate:
+    image: authzed/spicedb:latest
+    profiles: ["authz", "apps"]
+    command: datastore migrate head
+    environment:
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: "postgres://risk_authz:${RISK_AUTHZ_PG_PASSWORD}@risk-authz-postgres:5432/spicedb?sslmode=disable"
+    depends_on:
+      risk-authz-postgres: {condition: service_healthy}
+    restart: on-failure
+
+  risk-spicedb:
+    image: authzed/spicedb:latest
+    profiles: ["authz", "apps"]
+    command: serve
+    environment:
+      SPICEDB_GRPC_PRESHARED_KEY: ${RISK_SPICEDB_KEY}
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: "postgres://risk_authz:${RISK_AUTHZ_PG_PASSWORD}@risk-authz-postgres:5432/spicedb?sslmode=disable"
+      SPICEDB_HTTP_ENABLED: "true"
+    ports:
+      - "${RISK_SPICEDB_GRPC_PORT:-50053}:50051"
+      - "${RISK_SPICEDB_HTTP_PORT:-8545}:8443"
+      - "${RISK_SPICEDB_METRICS_PORT:-9101}:9090"
+    depends_on:
+      risk-spicedb-migrate: {condition: service_completed_successfully}
+
+  # ===== CDC / 配置 / 观测: profile=full =====
+  kafka-connect:
+    image: debezium/connect:2.7.3.Final
+    profiles: ["full"]
+    ports: ["${KAFKA_CONNECT_HOST_PORT:-8088}:8083"]
+    depends_on:
+      kafka: {condition: service_started}
+      mysql: {condition: service_healthy}
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: risk-connect-cluster
+      CONFIG_STORAGE_TOPIC: risk-connect-configs
+      OFFSET_STORAGE_TOPIC: risk-connect-offsets
+      STATUS_STORAGE_TOPIC: risk-connect-status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      ENABLE_DEBEZIUM_SCRIPTING: "false"
+      CONFIG_PROVIDERS: env
+      CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      DEBEZIUM_DB_USER: ${DEBEZIUM_DB_USER:-root}
+      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD}
+
+  nacos:
+    image: nacos/nacos-server:v2.4.2
+    profiles: ["full", "apps"]
+    ports: ["${NACOS_HTTP_HOST_PORT:-8848}:8848", "${NACOS_GRPC_HOST_PORT:-9848}:9848"]
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: ${NACOS_AUTH_ENABLE:-true}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-risk-platform}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
+      NACOS_AUTH_SYSTEM_TYPE: nacos
+
+  nacos-config-init:
+    image: curlimages/curl:8.10.1
+    profiles: ["full", "apps"]
+    depends_on:
+      nacos: {condition: service_started}
+    entrypoint: ["/bin/sh", "/config/publish.sh"]
+    environment:
+      NACOS_ADDR: http://nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD}
+    volumes:
+      - ./nacos:/config:ro
+
+  prometheus:
+    image: prom/prometheus:v2.53.2
+    profiles: ["full"]
+    ports: ["${PROMETHEUS_HOST_PORT:-9090}:9090"]
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    profiles: ["full"]
+    ports: ["${GRAFANA_HOST_PORT:-3000}:3000"]
+    depends_on:
+      prometheus: {condition: service_started}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    profiles: ["full"]
+    command: ["--kafka.server=kafka:29092"]
+    depends_on:
+      kafka: {condition: service_started}
+
+  skywalking-oap:
+    image: apache/skywalking-oap-server:10.1.0
+    profiles: ["full"]
+    depends_on:
+      elasticsearch: {condition: service_started}
+    environment:
+      SW_STORAGE: elasticsearch
+      SW_STORAGE_ES_CLUSTER_NODES: elasticsearch:9200
+    ports: ["${SKYWALKING_GRPC_HOST_PORT:-11800}:11800", "${SKYWALKING_HTTP_HOST_PORT:-12800}:12800"]
+
+  skywalking-ui:
+    image: apache/skywalking-ui:10.1.0
+    profiles: ["full"]
+    depends_on:
+      skywalking-oap: {condition: service_started}
+    environment:
+      SW_OAP_ADDRESS: http://skywalking-oap:12800
+    ports: ["${SKYWALKING_UI_HOST_PORT:-8080}:8080"]
+
+  skywalking-agent:
+    image: apache/skywalking-java-agent:9.3.0-java21
+    profiles: ["full", "apps"]
+    command: ["/bin/sh", "-c", "cp -R /skywalking/agent/. /agent-volume/"]
+    volumes:
+      - skywalking-agent:/agent-volume
+
+  # 模型重训调度: 单容器版 (内嵌 H2+ZK), UI http://localhost:12345/dolphinscheduler/ui。
   dolphinscheduler:
     image: apache/dolphinscheduler-standalone-server:3.2.2
+    profiles: ["full"]
     container_name: risk-dolphinscheduler
     ports:
-      - "12345:12345"
+      - "${DOLPHINSCHEDULER_HOST_PORT:-12345}:12345"
     environment:
       TZ: Asia/Shanghai
 
   # ===== 离线层 Hive 栈 (架构 A): profile=hive, 由 ./scripts/setup-hive.sh 拉起 =====
   # 不进默认 `docker compose up`, 避免污染实时栈。MinIO/S3A 当数据存储(存算分离, 不上 HDFS)。
 
-  # 对象存储: 离线宽表 parquet 落 s3a://warehouse/...; 控制台 http://localhost:9001 (minioadmin/minioadmin)
+  # 对象存储: 离线宽表 parquet 落 s3a://warehouse/...; 控制台 http://localhost:9001。
   minio:
     image: minio/minio:latest
     container_name: risk-minio
-    profiles: ["hive"]
+    profiles: ["hive", "full", "apps"]
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio-data:/data
 
@@ -112,13 +429,18 @@ services:
   minio-init:
     image: minio/mc:latest
     container_name: risk-minio-init
-    profiles: ["hive"]
+    profiles: ["hive", "full", "apps"]
     depends_on:
       - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do echo 'waiting minio...'; sleep 2; done;
+      until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do echo 'waiting minio...'; sleep 2; done;
       mc mb local/warehouse || true;
+      mc mb local/models || true;
+      mc anonymous set download local/models;
       echo 'bucket warehouse ready';
       "
 
@@ -132,17 +454,19 @@ services:
     depends_on:
       - mysql
     ports:
-      - "9083:9083"
+      - "${HIVE_METASTORE_HOST_PORT:-9083}:9083"
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: mysql
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       # 把镜像自带的 S3A jar(在 tools/lib, 默认不在 classpath) 挂上来, 让 metastore 能解析 s3a:// 表目录
       HIVE_AUX_JARS_PATH: /opt/hadoop/share/hadoop/tools/lib/hadoop-aws-3.3.6.jar,/opt/hadoop/share/hadoop/tools/lib/aws-java-sdk-bundle-1.12.367.jar
       SERVICE_OPTS: >-
         -Djavax.jdo.option.ConnectionDriverName=com.mysql.cj.jdbc.Driver
         -Djavax.jdo.option.ConnectionURL=jdbc:mysql://mysql:3306/metastore_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
         -Djavax.jdo.option.ConnectionUserName=root
-        -Djavax.jdo.option.ConnectionPassword=root123
+        -Djavax.jdo.option.ConnectionPassword=${MYSQL_ROOT_PASSWORD}
     volumes:
       - ./libs/mysql-connector-j.jar:/opt/hive/lib/mysql-connector-j.jar:ro
       # S3A 配置(指向 minio:9000), 供 metastore 在 s3a 上建/删表目录
@@ -150,6 +474,11 @@ services:
 
 volumes:
   mysql-data:
+    name: ${MYSQL_DATA_VOLUME:-risk-platform_mysql-data}
   redis-data:
   es-data:
   minio-data:
+  prometheus-data:
+  grafana-data:
+  skywalking-agent:
+  risk-authz-pg-data:

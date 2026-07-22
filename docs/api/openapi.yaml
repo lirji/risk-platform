@@ -1,0 +1,251 @@
+openapi: 3.0.3
+info:
+  title: Risk Platform API
+  version: 1.0.0
+  description: Synchronous decision data plane and authenticated management control plane.
+servers:
+  - url: http://localhost:8082
+    description: Decision gateway
+  - url: http://localhost:8083
+    description: Management API
+tags:
+  - {name: Identity}
+  - {name: Decision}
+  - {name: Cases}
+  - {name: Rules}
+  - {name: Models}
+  - {name: Profiles}
+  - {name: Operations}
+  - {name: Ratings}
+  - {name: Audit}
+paths:
+  /api/v1/risk/evaluations:
+    post:
+      tags: [Decision]
+      summary: Evaluate a transaction idempotently
+      security: [{bearerAuth: [risk.evaluate]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RiskRequest'}
+      responses:
+        '200':
+          description: Existing or newly completed decision
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RiskResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/auth/me:
+    get:
+      tags: [Identity]
+      summary: Validate the auth-platform bearer token and return effective permissions
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Validated identity and effective permissions}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/decisions:
+    get:
+      tags: [Decision]
+      summary: Search decisions
+      security: [{bearerAuth: [decision.read]}]
+      parameters:
+        - {name: riskLevel, in: query, schema: {type: string}}
+        - {name: q, in: query, description: Exact transaction ID, schema: {type: string}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Page of immutable decision summaries}
+  /api/v1/decisions/{decisionId}/replay:
+    post:
+      tags: [Decision, Operations]
+      summary: Create a new audited replay event without modifying the original
+      security: [{bearerAuth: [decision.replay]}]
+      parameters:
+        - {$ref: '#/components/parameters/DecisionId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: {reason: {type: string, minLength: 1}}
+      responses:
+        '200': {description: New replay event ID}
+  /api/v1/cases:
+    get:
+      tags: [Cases]
+      security: [{bearerAuth: [case.read]}]
+      responses: {'200': {description: Case queue}}
+  /api/v1/cases/{caseId}/claim:
+    post:
+      tags: [Cases]
+      security: [{bearerAuth: [case.write]}]
+      parameters:
+        - {name: caseId, in: path, required: true, schema: {type: string}}
+      responses: {'204': {description: Claimed}}
+  /api/v1/cases/{caseId}/resolve:
+    post:
+      tags: [Cases]
+      security: [{bearerAuth: [case.write]}]
+      parameters:
+        - {name: caseId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, reason]
+              properties:
+                label: {type: string, enum: [FRAUD, NORMAL, UNCERTAIN]}
+                reason: {type: string}
+      responses: {'204': {description: Resolved and label persisted}}
+  /api/v1/rules/releases:
+    get:
+      tags: [Rules]
+      security: [{bearerAuth: [rule.read]}]
+      responses: {'200': {description: Rule release history}}
+    post:
+      tags: [Rules]
+      security: [{bearerAuth: [rule.write]}]
+      responses: {'200': {description: Draft release}}
+  /api/v1/rules/releases/{releaseId}/{transition}:
+    post:
+      tags: [Rules]
+      summary: Submit, approve, publish, or rollback a rule release
+      security: [{bearerAuth: [rule.write]}]
+      parameters:
+        - {name: releaseId, in: path, required: true, schema: {type: string}}
+        - {name: transition, in: path, required: true, schema: {type: string, enum: [submit, approve, publish, rollback]}}
+      responses: {'200': {description: Updated release}}
+  /api/v1/rules/bindings:
+    get:
+      tags: [Rules]
+      summary: List source-to-release bindings, ordered rule sets, rollout, previous and shadow versions
+      security: [{bearerAuth: [rule.read]}]
+      responses: {'200': {description: Runtime source bindings}}
+  /api/v1/models:
+    get:
+      tags: [Models]
+      security: [{bearerAuth: [model.read]}]
+      responses: {'200': {description: Model registry}}
+    post:
+      tags: [Models]
+      security: [{bearerAuth: [model.write]}]
+      responses: {'200': {description: Registered model ID}}
+  /api/v1/models/{modelId}/activate:
+    post:
+      tags: [Models]
+      summary: Validate and activate or adjust a deterministic canary deployment
+      security: [{bearerAuth: [model.activate]}]
+      parameters:
+        - {name: modelId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rolloutPercentage]
+              properties: {rolloutPercentage: {type: integer, minimum: 0, maximum: 100}}
+      responses: {'204': {description: Runtime and registry deployment updated}}
+  /api/v1/models/{modelId}/rollback:
+    post:
+      tags: [Models]
+      security: [{bearerAuth: [model.activate]}]
+      parameters:
+        - {name: modelId, in: path, required: true, schema: {type: string}}
+      responses: {'204': {description: Reviewed previous version restored}}
+  /api/v1/models/{modelId}/monitoring:
+    get:
+      tags: [Models]
+      security: [{bearerAuth: [model.read]}]
+      parameters:
+        - {name: modelId, in: path, required: true, schema: {type: string}}
+      responses: {'200': {description: Score histogram and PSI history}}
+  /api/v1/profiles/{accountNo}:
+    get:
+      tags: [Profiles]
+      security: [{bearerAuth: [profile.read]}]
+      parameters:
+        - {name: accountNo, in: path, required: true, schema: {type: string}}
+      responses: {'200': {description: Masked profile and feature definitions}}
+  /api/v1/operations/dead-events:
+    get:
+      tags: [Operations]
+      security: [{bearerAuth: [ops.read]}]
+      responses: {'200': {description: Unified dead Outbox and Kafka DLT events}}
+  /api/v1/operations/dead-events/{eventId}/replay:
+    post:
+      tags: [Operations]
+      summary: Authorize an audited replay to Outbox or the original Kafka topic
+      security: [{bearerAuth: [ops.replay]}]
+      parameters:
+        - {name: eventId, in: path, required: true, schema: {type: string}}
+      responses: {'204': {description: Replay accepted}}
+  /api/v1/ratings/jobs:
+    get:
+      tags: [Ratings]
+      security: [{bearerAuth: [rating.read]}]
+      responses: {'200': {description: Rating job states and failures}}
+    post:
+      tags: [Ratings]
+      security: [{bearerAuth: [rating.write]}]
+      responses: {'200': {description: Created rating job ID}}
+  /api/v1/audit:
+    get:
+      tags: [Audit]
+      security: [{bearerAuth: [audit.read]}]
+      responses: {'200': {description: Immutable audit entries}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    DecisionId: {name: decisionId, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    RiskRequest:
+      type: object
+      required: [sourceId, txnId, channel, bizType, accountNo, amount, currency, eventTime]
+      properties:
+        sourceId: {type: string, maxLength: 64}
+        txnId: {type: string, maxLength: 128}
+        channel: {type: string}
+        bizType: {type: string}
+        accountNo: {type: string, writeOnly: true}
+        counterpartyAccount: {type: string, writeOnly: true}
+        amount: {type: integer, format: int64, minimum: 1, description: Minor currency units}
+        currency: {type: string, minLength: 3, maxLength: 3}
+        deviceId: {type: string}
+        ip: {type: string}
+        eventTime: {type: string, format: date-time}
+        transactionStatus: {type: string, enum: [UNKNOWN, SUCCESS, FAILED]}
+    RiskResponse:
+      type: object
+      required: [decisionId, txnId, riskLevel, action, fraudScore, hitRules, ruleVersion, modelVersion, costMs]
+      properties:
+        decisionId: {type: string, format: uuid}
+        txnId: {type: string}
+        riskLevel: {type: string}
+        action: {type: string, enum: [ALLOW, CHALLENGE, REVIEW, REJECT]}
+        fraudScore: {type: number, minimum: 0, maximum: 1}
+        hitRules: {type: array, items: {type: string}}
+        ruleVersion: {type: string}
+        modelVersion: {type: string}
+        costMs: {type: integer, format: int64}
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        traceId: {type: string}
+        fieldErrors: {type: object, additionalProperties: {type: string}}
+  responses:
+    BadRequest:
+      description: Stable validation failure
+      content: {application/json: {schema: {$ref: '#/components/schemas/ApiError'}}}
+    Unauthorized: {description: Missing or invalid authentication}
+    Forbidden: {description: Authenticated principal lacks the required permission}

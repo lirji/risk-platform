@@ -1,0 +1,33 @@
+{
+  "name": "risk-platform-mysql-source",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+    "tasks.max": "1",
+    "database.hostname": "mysql",
+    "database.port": "3306",
+    "database.user": "${env:DEBEZIUM_DB_USER}",
+    "database.password": "${env:DEBEZIUM_DB_PASSWORD}",
+    "database.server.id": "184054",
+    "topic.prefix": "risk-cdc",
+    "database.include.list": "risk_platform",
+    "table.include.list": "risk_platform.business_transaction",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+    "schema.history.internal.kafka.topic": "risk-cdc.schema-history",
+    "include.schema.changes": "false",
+    "snapshot.mode": "initial",
+    "tombstones.on.delete": "false",
+    "decimal.handling.mode": "string",
+    "time.precision.mode": "connect",
+    "transforms": "unwrap,route",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,table,source.ts_ms",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "risk-cdc\\.risk_platform\\.business_transaction",
+    "transforms.route.replacement": "business-transaction.cdc.v1",
+    "errors.tolerance": "all",
+    "errors.deadletterqueue.topic.name": "business-transaction.cdc.v1.DLT",
+    "errors.deadletterqueue.context.headers.enable": "true",
+    "errors.log.enable": "true"
+  }
+}

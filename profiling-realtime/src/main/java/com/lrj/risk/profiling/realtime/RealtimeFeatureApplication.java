@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * 实时特征计算服务 (画像项目的实时层雏形)。
+ * 实时特征计算服务（轻量 Kafka/Redis 实现，与 Flink 实现共享事件时间聚合语义）。
  *
  * <p>消费 Kafka 交易流, 用 Redis 原子操作维护窗口特征 (当日累计/笔数、新设备),
  * 写回 {@code feature:{账号}} 供反欺诈同步链路读取, 形成"交易→特征→下一笔评估"闭环。

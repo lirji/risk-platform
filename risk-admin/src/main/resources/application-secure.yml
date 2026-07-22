@@ -1,0 +1,36 @@
+spring:
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+  security:
+    oauth2:
+      client:
+        registration:
+          risk-service:
+            provider: casdoor
+            client-id: ${CASDOOR_SERVICE_CLIENT_ID}
+            client-secret: ${CASDOOR_SERVICE_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            scope: service.runtime.deploy
+        provider:
+          casdoor:
+            token-uri: ${CASDOOR_INTERNAL_URL:http://localhost:8000}/api/login/oauth/access_token
+
+risk:
+  identity:
+    issuer: ${CASDOOR_PUBLIC_URL:http://localhost:8000}
+    jwk-set-uri: ${CASDOOR_INTERNAL_URL:http://localhost:8000}/.well-known/jwks
+    organization: ${CASDOOR_ORGANIZATION:risk-platform}
+    audiences: ${CASDOOR_AUDIENCES:ragshared0client00000001-org-risk-platform}
+  operations:
+    dlt-listener-enabled: ${DLT_LISTENER_ENABLED:false}
+
+authz:
+  client:
+    enabled: true
+
+server:
+  forward-headers-strategy: framework
+  max-http-request-header-size: 64KB

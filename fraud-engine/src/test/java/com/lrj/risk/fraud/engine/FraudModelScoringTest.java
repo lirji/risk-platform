@@ -4,10 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
+import java.time.Instant;
+import com.lrj.risk.contracts.v1.ModelFeatureSchemaV1;
 
-import com.lrj.risk.feature.FeatureSnapshot;
-import com.lrj.risk.fraud.engine.model.RiskAssessment;
-import com.lrj.risk.fraud.engine.model.TransactionEvent;
+import com.lrj.risk.feature.domain.FeatureSnapshot;
+import com.lrj.risk.fraud.application.FraudDecisionService;
+import com.lrj.risk.fraud.domain.model.RiskAssessment;
+import com.lrj.risk.fraud.domain.model.TransactionEvent;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -19,20 +22,20 @@ import org.junit.jupiter.api.Test;
 class FraudModelScoringTest {
 
     private static ModelScorer scorer;
-    private static FraudEngineService engine;
+    private static FraudDecisionService engine;
 
     @BeforeAll
     static void setUp() {
         scorer = new ModelScorer();
         scorer.init();   // 真正加载 PMML
-        engine = new FraudEngineService(
-                new KieContainerHolder(),
-                new SourceRuleSetBinding(),
-                scorer);
+        engine = new FraudDecisionService(
+                new DroolsRuleEvaluator(new KieContainerHolder()),
+                new SourceRuleSetBinding(), scorer);
     }
 
     private TransactionEvent txn(long amountCents, String counterparty) {
         TransactionEvent t = new TransactionEvent();
+        t.setTxnId("txn-model-test");
         t.setSourceId("MOBILE_TRANSFER");
         t.setBizType("TRANSFER");
         t.setAccountNo("ACC900");
@@ -66,5 +69,29 @@ class FraudModelScoringTest {
         boolean modelRuleHit = r.getHitRules().contains("MODEL_HIGH_RISK")
                 || r.getHitRules().contains("MODEL_MID_RISK");
         assertTrue(modelRuleHit, "应命中模型规则, 实际命中=" + r.getHitRules());
+    }
+
+    @Test
+    void 训练服务特征契约一致且hour使用事件时间() {
+        TransactionEvent transaction = txn(50_000, null);
+        transaction.setEventTime(Instant.parse("2026-07-22T23:15:00Z"));
+        Map<String, Object> inputs = scorer.inputFeatures(transaction, FeatureSnapshot.empty());
+        assertTrue(inputs.keySet().containsAll(ModelFeatureSchemaV1.FEATURES));
+        assertTrue(ModelFeatureSchemaV1.FEATURES.containsAll(inputs.keySet()));
+        assertTrue(Double.valueOf(23d).equals(inputs.get("hour")));
+    }
+
+    @Test
+    void 模型灰度按交易稳定分桶并支持全量切换() throws Exception {
+        byte[] pmml;
+        try (var input = new org.springframework.core.io.ClassPathResource("model/fraud-rf.pmml").getInputStream()) {
+            pmml = input.readAllBytes();
+        }
+        TransactionEvent transaction = txn(50_000, null);
+        scorer.deploy(pmml, "fraud-rf-canary", 0);
+        assertTrue("fraud-rf-baseline-1".equals(scorer.activeVersion(transaction)));
+        assertTrue("fraud-rf-baseline-1".equals(scorer.activeVersion(transaction)));
+        scorer.deploy(pmml, "fraud-rf-v2", 100);
+        assertTrue("fraud-rf-v2".equals(scorer.activeVersion(transaction)));
     }
 }

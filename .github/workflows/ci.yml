@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Verify vendored auth-platform SDK
+        run: test -s libs/authz/auth-platform-sdk-0.1.0-SNAPSHOT.jar && test -s libs/authz/auth-platform-protocol-0.1.0-SNAPSHOT.jar
+      - run: ./mvnw -B clean verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-reports
+          path: "**/target/surefire-reports/**"
+          if-no-files-found: ignore
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: risk-console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: risk-console/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: risk-console-dist
+          path: risk-console/dist
+
+  configuration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: docker compose --env-file .env.example --profile full --profile apps --profile hive config --quiet
+      - name: Verify identity is external
+        run: '! docker compose --env-file .env.example --profile full --profile apps config --services | grep -qx casdoor'
+      - run: helm lint deploy/helm/risk-platform
+      - run: helm template risk-ci deploy/helm/risk-platform > /tmp/risk-platform.yaml
+      - run: for file in connect/*.json observability/grafana/dashboards/*.json es-init/*.json casdoor/*.json; do jq -e . "$file" >/dev/null; done
+      - run: ruby -e 'require "yaml"; Dir["**/*.{yml,yaml}"].reject { |f| f.include?("node_modules") || f.include?("deploy/helm/risk-platform/templates/") }.each { |f| YAML.load_stream(File.read(f)) }; YAML.load_stream(File.read("/tmp/risk-platform.yaml"))'
+      - run: bash -n scripts/*.sh nacos/publish.sh
+
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: fraud-gateway
+            dockerfile: fraud-gateway/Dockerfile
+          - name: risk-admin
+            dockerfile: risk-admin/Dockerfile
+          - name: fraud-decision-log
+            dockerfile: fraud-decision-log/Dockerfile
+          - name: risk-console
+            dockerfile: risk-console/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: risk-platform/${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

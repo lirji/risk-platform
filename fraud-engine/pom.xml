@@ -16,6 +16,10 @@
     <description>反欺诈规则引擎: Drools 规则集 + 来源绑定 + 决策聚合 (双轨决策的规则侧)</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.lrj.risk</groupId>
+            <artifactId>platform-contracts</artifactId>
+        </dependency>
         <!-- 共享特征层: 规则读 FeatureSnapshot -->
         <dependency>
             <groupId>com.lrj.risk</groupId>
@@ -77,6 +81,11 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

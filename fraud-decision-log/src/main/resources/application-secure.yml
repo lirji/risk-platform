@@ -1,0 +1,9 @@
+risk:
+  identity:
+    issuer: ${CASDOOR_PUBLIC_URL:http://localhost:8000}
+    jwk-set-uri: ${CASDOOR_INTERNAL_URL:http://localhost:8000}/.well-known/jwks
+    organization: ${CASDOOR_ORGANIZATION:risk-platform}
+    audiences: ${CASDOOR_AUDIENCES:ragshared0client00000001-org-risk-platform}
+
+server:
+  max-http-request-header-size: 64KB

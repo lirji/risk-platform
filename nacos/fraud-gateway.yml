@@ -1,0 +1,13 @@
+risk:
+  outbox:
+    relay-delay-ms: 500
+    batch-size: 100
+    max-attempts: 8
+  decision:
+    max-future-skew: PT5M
+
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

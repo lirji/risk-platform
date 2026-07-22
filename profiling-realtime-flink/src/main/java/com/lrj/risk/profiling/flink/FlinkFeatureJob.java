@@ -1,60 +1,73 @@
 package com.lrj.risk.profiling.flink;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lrj.risk.common.event.TransactionMessage;
+import java.time.Duration;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lrj.risk.contracts.v1.TransactionEventV1;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.RestartStrategyOptions;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
-/**
- * 实时特征计算 (Flink 版) —— profiling-realtime 轻量消费者的 Flink 平替 (PLAN §2.2)。
- *
- * <p>DataStream: KafkaSource(txn-events) → 解析 → keyBy(账号) → 键控状态聚合
- * (当日累计/笔数 + 5 分钟滑窗计数) → 写 Redis feature:{账号}。
- * 用 {@code StreamExecutionEnvironment.getExecutionEnvironment()} 嵌入式本地 MiniCluster 运行。
- *
- * <p>注意: 与 profiling-realtime 二选一 (不同 consumer group, 同时跑会重复写特征)。
- */
-public class FlinkFeatureJob {
+public final class FlinkFeatureJob {
 
-    static final String TOPIC = "txn-events";
+    static final String TOPIC = "transaction.v1";
+    private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
+
+    private FlinkFeatureJob() {
+    }
 
     public static void main(String[] args) throws Exception {
         String bootstrap = System.getenv().getOrDefault("KAFKA_BOOTSTRAP", "localhost:9092");
+        String checkpointUri = System.getenv().getOrDefault("FLINK_CHECKPOINT_URI",
+                "file:///tmp/risk-platform-flink-checkpoints");
+        String zoneId = System.getenv().getOrDefault("FEATURE_TIME_ZONE", "UTC");
 
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
+        StreamExecutionEnvironment environment = StreamExecutionEnvironment.getExecutionEnvironment();
+        Configuration faultTolerance = new Configuration();
+        faultTolerance.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointUri);
+        faultTolerance.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+        faultTolerance.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 3);
+        faultTolerance.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofSeconds(5));
+        environment.configure(faultTolerance);
+        environment.enableCheckpointing(10_000, CheckpointingMode.EXACTLY_ONCE);
 
         KafkaSource<String> source = KafkaSource.<String>builder()
                 .setBootstrapServers(bootstrap)
                 .setTopics(TOPIC)
-                .setGroupId("flink-feature")
+                .setGroupId("flink-feature-v1")
                 .setStartingOffsets(OffsetsInitializer.earliest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
 
-        DataStream<String> raw = env.fromSource(source, WatermarkStrategy.noWatermarks(), "kafka-txn");
+        WatermarkStrategy<TransactionEventV1> watermarks = WatermarkStrategy
+                .<TransactionEventV1>forBoundedOutOfOrderness(Duration.ofMinutes(2))
+                .withTimestampAssigner((event, previousTimestamp) -> event.eventTime().toEpochMilli())
+                .withIdleness(Duration.ofMinutes(1));
 
-        raw.map(FlinkFeatureJob::parse)
-                .filter(m -> m != null && m.getAccountNo() != null && !m.getAccountNo().isBlank())
-                .keyBy(TransactionMessage::getAccountNo)
-                .process(new FeatureAggregator())
-                .name("feature-aggregator");
+        environment.fromSource(source, WatermarkStrategy.noWatermarks(), "transaction-v1-source")
+                .map(FlinkFeatureJob::parse)
+                .filter(event -> event != null && !event.accountNo().isBlank())
+                .assignTimestampsAndWatermarks(watermarks)
+                .keyBy(TransactionEventV1::accountNo)
+                .process(new FeatureAggregator(zoneId))
+                .name("feature-domain-aggregator")
+                .addSink(new RedisFeatureSink())
+                .name("redis-feature-projection");
 
-        env.execute("flink-realtime-feature");
+        environment.execute("risk-platform-realtime-feature-v1");
     }
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    private static TransactionMessage parse(String json) {
+    static TransactionEventV1 parse(String json) {
         try {
-            return MAPPER.readValue(json, TransactionMessage.class);
-        } catch (Exception e) {
-            return null;
+            return MAPPER.readValue(json, TransactionEventV1.class);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("invalid transaction.v1 event", exception);
         }
     }
 }

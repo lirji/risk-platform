@@ -11,6 +11,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.Duration;
+import java.sql.Timestamp;
+import java.time.Instant;
 
 /**
  * MySQL 配置中心读取 (架构 A "配置即数据"): 任务、评分规则、评级阈值。
@@ -45,6 +48,49 @@ public class ConfigRepository {
             return Optional.empty();
         } catch (SQLException e) {
             throw new RuntimeException("读取任务失败", e);
+        }
+    }
+
+    /** Atomically claims one task with a renewable lease; concurrent workers cannot receive the same task. */
+    public Optional<RatingTask> claimNextPendingTask(String workerId, Duration leaseDuration) {
+        String select = """
+                SELECT id, task_code, model_code, source_index, target_index
+                  FROM t_rating_task
+                 WHERE attempts < max_attempts
+                   AND (status = 'PENDING' OR (status = 'RUNNING' AND lease_until < CURRENT_TIMESTAMP))
+                 ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+                """;
+        try (Connection connection = conn()) {
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement(); ResultSet resultSet = statement.executeQuery(select)) {
+                if (!resultSet.next()) {
+                    connection.commit();
+                    return Optional.empty();
+                }
+                RatingTask task = new RatingTask(resultSet.getLong("id"), resultSet.getString("task_code"),
+                        resultSet.getString("model_code"), resultSet.getString("source_index"),
+                        resultSet.getString("target_index"));
+                try (PreparedStatement update = connection.prepareStatement("""
+                        UPDATE t_rating_task
+                           SET status='RUNNING', attempts=attempts+1, lease_owner=?, lease_until=?, last_error=NULL
+                         WHERE id=?
+                        """)) {
+                    update.setString(1, workerId);
+                    update.setTimestamp(2, Timestamp.from(Instant.now().plus(leaseDuration)));
+                    update.setLong(3, task.getId());
+                    if (update.executeUpdate() != 1) {
+                        connection.rollback();
+                        return Optional.empty();
+                    }
+                }
+                connection.commit();
+                return Optional.of(task);
+            } catch (SQLException failure) {
+                connection.rollback();
+                throw failure;
+            }
+        } catch (SQLException exception) {
+            throw new RuntimeException("原子领取评级任务失败", exception);
         }
     }
 
@@ -88,6 +134,32 @@ public class ConfigRepository {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("更新任务状态失败", e);
+        }
+    }
+
+    public void completeTask(long taskId, String workerId) {
+        transitionClaimed(taskId, workerId, "DONE", null);
+    }
+
+    public void failTask(long taskId, String workerId, String error) {
+        transitionClaimed(taskId, workerId, "FAILED", error);
+    }
+
+    private void transitionClaimed(long taskId, String workerId, String status, String error) {
+        try (Connection connection = conn(); PreparedStatement statement = connection.prepareStatement("""
+                UPDATE t_rating_task
+                   SET status=?, lease_owner=NULL, lease_until=NULL, last_error=?
+                 WHERE id=? AND status='RUNNING' AND lease_owner=?
+                """)) {
+            statement.setString(1, status);
+            statement.setString(2, error == null ? null : error.substring(0, Math.min(1000, error.length())));
+            statement.setLong(3, taskId);
+            statement.setString(4, workerId);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("评级任务租约已丢失 taskId=" + taskId);
+            }
+        } catch (SQLException exception) {
+            throw new RuntimeException("更新评级任务状态失败", exception);
         }
     }
 }

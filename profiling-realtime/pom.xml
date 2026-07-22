@@ -21,6 +21,10 @@
             <groupId>com.lrj.risk</groupId>
             <artifactId>common-feature</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.lrj.risk</groupId>
+            <artifactId>platform-contracts</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -34,10 +38,15 @@
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>
         </dependency>
-        <!-- JsonDeserializer 依赖 jackson; spring-boot-starter(无web) 不传递 jackson-databind -->
+        <!-- 提供 Jackson 自动配置和 ObjectMapper Bean；基础 starter 不包含 JSON starter。 -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

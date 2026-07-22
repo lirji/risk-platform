@@ -1,0 +1,62 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+existingSecret: risk-platform-secrets
+
+global:
+  casdoorPublicUrl: https://auth.example.invalid
+  casdoorInternalUrl: http://auth-platform-casdoor.identity.svc:8000
+  casdoorOrganization: risk-platform
+  casdoorAdminAudiences: ragshared0client00000001-org-risk-platform
+  casdoorEvaluationAudiences: risk-bank-client
+  casdoorRuntimeAudiences: risk-runtime-client
+  authzServerUrl: http://risk-authz-server.identity.svc:8212
+  nacosServerAddr: nacos.platform.svc:8848
+  mysqlUrl: jdbc:mysql://mysql.data.svc:3306/risk_platform?useSSL=true&serverTimezone=UTC
+  redisHost: redis.data.svc
+  kafkaBootstrap: kafka.data.svc:9092
+  elasticsearchUrl: https://elasticsearch.data.svc:9200
+  modelArtifactPrefix: https://models.example.invalid/
+
+components:
+  fraud-gateway:
+    image: {repository: ghcr.io/example/risk-platform/fraud-gateway, tag: latest, pullPolicy: IfNotPresent}
+    replicas: 2
+    port: 8082
+    service: true
+    profile: secure,nacos
+  risk-admin:
+    image: {repository: ghcr.io/example/risk-platform/risk-admin, tag: latest, pullPolicy: IfNotPresent}
+    replicas: 2
+    port: 8083
+    service: true
+    profile: secure,nacos
+  fraud-decision-log:
+    image: {repository: ghcr.io/example/risk-platform/fraud-decision-log, tag: latest, pullPolicy: IfNotPresent}
+    replicas: 1
+    port: 8084
+    service: true
+    profile: secure
+  risk-console:
+    image: {repository: ghcr.io/example/risk-platform/risk-console, tag: latest, pullPolicy: IfNotPresent}
+    replicas: 2
+    port: 8080
+    service: true
+    profile: ""
+    # VITE_* OIDC values are compiled into this image; build it for the same
+    # Casdoor public URL, public client ID and organization configured above.
+
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+ingress:
+  enabled: false
+  className: nginx
+  host: risk.example.invalid
+  tlsSecretName: risk-platform-tls
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

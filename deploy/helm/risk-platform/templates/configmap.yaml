@@ -1,0 +1,36 @@
+{{- range $name, $component := .Values.components }}
+{{- if ne $name "risk-console" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "risk-platform.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "risk-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+data:
+  SPRING_PROFILES_ACTIVE: {{ $component.profile | quote }}
+  CASDOOR_PUBLIC_URL: {{ $.Values.global.casdoorPublicUrl | quote }}
+  CASDOOR_INTERNAL_URL: {{ $.Values.global.casdoorInternalUrl | quote }}
+  CASDOOR_ORGANIZATION: {{ $.Values.global.casdoorOrganization | quote }}
+  NACOS_SERVER_ADDR: {{ $.Values.global.nacosServerAddr | quote }}
+  DB_URL: {{ $.Values.global.mysqlUrl | quote }}
+  REDIS_HOST: {{ $.Values.global.redisHost | quote }}
+  KAFKA_BOOTSTRAP: {{ $.Values.global.kafkaBootstrap | quote }}
+  ES_URL: {{ $.Values.global.elasticsearchUrl | quote }}
+  MODEL_ARTIFACT_PREFIX: {{ $.Values.global.modelArtifactPrefix | quote }}
+  RISK_GATEWAY_URL: {{ printf "http://%s-fraud-gateway:8082" (include "risk-platform.fullname" $) | quote }}
+  {{- if eq $name "risk-admin" }}
+  DLT_LISTENER_ENABLED: "true"
+  CASDOOR_AUDIENCES: {{ $.Values.global.casdoorAdminAudiences | quote }}
+  AUTHZ_SERVER_URL: {{ $.Values.global.authzServerUrl | quote }}
+  AUTHZ_CLIENT_ENABLED: "true"
+  RISK_AUTHZ_MODE: "enforce"
+  {{- else if eq $name "fraud-gateway" }}
+  CASDOOR_EVALUATION_AUDIENCES: {{ $.Values.global.casdoorEvaluationAudiences | quote }}
+  CASDOOR_RUNTIME_AUDIENCES: {{ $.Values.global.casdoorRuntimeAudiences | quote }}
+  {{- else if eq $name "fraud-decision-log" }}
+  CASDOOR_AUDIENCES: {{ $.Values.global.casdoorAdminAudiences | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

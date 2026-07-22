@@ -1,0 +1,75 @@
+asyncapi: 3.0.0
+info:
+  title: Risk Platform Events
+  version: 1.0.0
+  description: Versioned Kafka contracts. Producers use outbox; consumers deduplicate by metadata.eventId.
+servers:
+  localKafka:
+    host: localhost:9092
+    protocol: kafka
+channels:
+  transactionV1:
+    address: transaction.v1
+    messages:
+      transaction: {$ref: '#/components/messages/TransactionV1'}
+  decisionV1:
+    address: decision.v1
+    messages:
+      decision: {$ref: '#/components/messages/DecisionV1'}
+  riskSignalV1:
+    address: risk-signal.v1
+    messages:
+      signal: {$ref: '#/components/messages/RiskSignalV1'}
+  transactionDlt:
+    address: transaction.v1.DLT
+    messages:
+      transaction: {$ref: '#/components/messages/TransactionV1'}
+  decisionDlt:
+    address: decision.v1.DLT
+    messages:
+      decision: {$ref: '#/components/messages/DecisionV1'}
+operations:
+  publishTransaction:
+    action: send
+    channel: {$ref: '#/channels/transactionV1'}
+  consumeTransaction:
+    action: receive
+    channel: {$ref: '#/channels/transactionV1'}
+  publishDecision:
+    action: send
+    channel: {$ref: '#/channels/decisionV1'}
+  consumeDecision:
+    action: receive
+    channel: {$ref: '#/channels/decisionV1'}
+components:
+  messages:
+    TransactionV1:
+      name: TransactionV1
+      contentType: application/json
+      payload: {$ref: '../../platform-contracts/src/main/resources/schema/transaction.v1.schema.json'}
+    DecisionV1:
+      name: DecisionV1
+      contentType: application/json
+      payload: {$ref: '../../platform-contracts/src/main/resources/schema/decision.v1.schema.json'}
+    RiskSignalV1:
+      name: RiskSignalV1
+      contentType: application/json
+      payload:
+        type: object
+        required: [metadata, signalCode, severity, evidence]
+        properties:
+          metadata: {$ref: '#/components/schemas/EventMetadata'}
+          signalCode: {type: string}
+          severity: {type: string}
+          evidence: {type: object, additionalProperties: {type: string}}
+  schemas:
+    EventMetadata:
+      type: object
+      required: [eventId, schemaVersion, occurredAt, correlationId, sourceId, txnId]
+      properties:
+        eventId: {type: string, format: uuid}
+        schemaVersion: {type: integer, const: 1}
+        occurredAt: {type: string, format: date-time}
+        correlationId: {type: string}
+        sourceId: {type: string}
+        txnId: {type: string}

@@ -1,80 +1,26 @@
 package com.lrj.risk.fraud.gateway.dto;
 
-/**
- * 银行侧传入的交易决策请求。
- */
-public class RiskRequest {
+import java.time.Instant;
 
-    private String sourceId;             // 交易来源/接入方
-    private String channel;              // 渠道 MOBILE / WEB
-    private String bizType;              // 业务类型 TRANSFER / REMITTANCE
-    private String accountNo;            // 账号 (特征查询主键)
-    private String counterpartyAccount;  // 对手方账号
-    private long amount;                 // 金额, 单位: 分
-    private String deviceId;             // 设备指纹
-    private String ip;                   // 来源 IP
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+import com.lrj.risk.contracts.v1.TransactionStatus;
 
-    public String getSourceId() {
-        return sourceId;
-    }
-
-    public void setSourceId(String sourceId) {
-        this.sourceId = sourceId;
-    }
-
-    public String getChannel() {
-        return channel;
-    }
-
-    public void setChannel(String channel) {
-        this.channel = channel;
-    }
-
-    public String getBizType() {
-        return bizType;
-    }
-
-    public void setBizType(String bizType) {
-        this.bizType = bizType;
-    }
-
-    public String getAccountNo() {
-        return accountNo;
-    }
-
-    public void setAccountNo(String accountNo) {
-        this.accountNo = accountNo;
-    }
-
-    public String getCounterpartyAccount() {
-        return counterpartyAccount;
-    }
-
-    public void setCounterpartyAccount(String counterpartyAccount) {
-        this.counterpartyAccount = counterpartyAccount;
-    }
-
-    public long getAmount() {
-        return amount;
-    }
-
-    public void setAmount(long amount) {
-        this.amount = amount;
-    }
-
-    public String getDeviceId() {
-        return deviceId;
-    }
-
-    public void setDeviceId(String deviceId) {
-        this.deviceId = deviceId;
-    }
-
-    public String getIp() {
-        return ip;
-    }
-
-    public void setIp(String ip) {
-        this.ip = ip;
-    }
+/** Bank-facing request. Amount is expressed in minor currency units. */
+public record RiskRequest(
+        @NotBlank @Size(max = 64) String sourceId,
+        @NotBlank @Size(max = 128) String txnId,
+        @NotBlank @Pattern(regexp = "MOBILE|WEB|ATM|API|BRANCH") String channel,
+        @NotBlank @Pattern(regexp = "TRANSFER|REMITTANCE|PAYMENT|WITHDRAWAL") String bizType,
+        @NotBlank @Size(max = 128) String accountNo,
+        @Size(max = 128) String counterpartyAccount,
+        @Positive long amount,
+        @NotBlank @Pattern(regexp = "[A-Z]{3}") String currency,
+        @Size(max = 128) String deviceId,
+        @Size(max = 64) String ip,
+        @NotNull Instant eventTime,
+        TransactionStatus transactionStatus) {
 }

@@ -1,0 +1,13 @@
+{
+  "roles": {
+    "risk-admin": ["dashboard.read", "decision.read", "decision.replay", "case.read", "case.write", "profile.read", "profile.write", "rule.read", "rule.write", "rule.approve", "rule.publish", "model.read", "model.write", "model.approve", "model.activate", "rating.read", "rating.write", "ops.read", "ops.replay", "audit.read"],
+    "risk-analyst": ["dashboard.read", "decision.read", "case.read", "case.write", "profile.read", "rule.read", "model.read", "rating.read", "ops.read"],
+    "risk-reviewer": ["dashboard.read", "decision.read", "case.read", "profile.read", "rule.read", "rule.approve", "model.read", "model.approve", "audit.read"],
+    "rule-author": ["dashboard.read", "rule.read", "rule.write"],
+    "model-admin": ["dashboard.read", "model.read", "model.write", "model.activate"]
+  },
+  "serviceClients": {
+    "bank-channel": ["risk.evaluate"],
+    "risk-admin-service": ["service.runtime.deploy"]
+  }
+}

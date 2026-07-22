@@ -1,0 +1,59 @@
+server:
+  port: 8083
+
+spring:
+  profiles:
+    default: dev
+  application:
+    name: risk-admin
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:risk-admin;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+  flyway:
+    enabled: true
+    table: flyway_admin_history
+    locations: classpath:db/admin-migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 300ms
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  cloud:
+    nacos:
+      config:
+        import-check:
+          enabled: false
+
+risk:
+  operations:
+    dlt-listener-enabled: ${DLT_LISTENER_ENABLED:false}
+  authz:
+    mode: ${RISK_AUTHZ_MODE:disabled}
+  gateway:
+    base-url: ${RISK_GATEWAY_URL:http://localhost:8082}
+
+authz:
+  client:
+    enabled: ${AUTHZ_CLIENT_ENABLED:false}
+    server-url: ${AUTHZ_SERVER_URL:http://localhost:8212}
+    token: ${AUTHZ_CLIENT_TOKEN:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: risk-admin

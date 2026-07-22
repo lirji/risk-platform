@@ -3,8 +3,18 @@ server:
   port: 8082
 
 spring:
+  profiles:
+    default: dev
   application:
     name: fraud-gateway
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:risk;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 20
+  flyway:
+    enabled: true
   data:
     redis:
       # 对应 docker-compose 的 redis; 连接参数可用环境变量覆盖
@@ -16,12 +26,32 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
       # 发不出去不要无限阻塞主链路; 约束: delivery.timeout.ms >= request.timeout.ms + linger.ms
       properties:
         max.block.ms: 500
         request.timeout.ms: 1500
         delivery.timeout.ms: 2000
+        enable.idempotence: true
+        acks: all
+  cloud:
+    nacos:
+      config:
+        import-check:
+          enabled: false
+
+risk:
+  security:
+    pii-hmac-key: ${PII_HMAC_KEY:local-development-only}
+  outbox:
+    relay-delay-ms: ${OUTBOX_RELAY_DELAY_MS:500}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    max-attempts: ${OUTBOX_MAX_ATTEMPTS:8}
+  decision:
+    max-event-age: ${MAX_EVENT_AGE:P90D}
+    max-future-skew: ${MAX_FUTURE_SKEW:PT5M}
+  model:
+    allowed-artifact-prefix: ${MODEL_ARTIFACT_PREFIX:http://localhost:9000/}
 
 management:
   endpoints:

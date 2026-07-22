@@ -9,7 +9,13 @@ CREATE TABLE IF NOT EXISTS t_rating_task (
     source_index VARCHAR(128) NOT NULL        COMMENT 'ES 标签数据源索引',
     target_index VARCHAR(128) NOT NULL        COMMENT 'es 风险库目标索引',
     status       VARCHAR(16)  NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/RUNNING/DONE/FAILED',
-    create_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+    attempts     INT          NOT NULL DEFAULT 0,
+    max_attempts INT          NOT NULL DEFAULT 3,
+    lease_owner  VARCHAR(128),
+    lease_until  DATETIME,
+    last_error   VARCHAR(1000),
+    create_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) COMMENT='评级任务: Web 平台创建, 引擎读 PENDING 任务执行';
 
 CREATE TABLE IF NOT EXISTS t_score_rule (

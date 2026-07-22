@@ -3,6 +3,8 @@ package com.lrj.risk.rating;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.sql.Timestamp;
+import java.time.Instant;
 
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -15,7 +17,7 @@ import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
 /**
- * 离线层 Hive 宽表 seeding (架构 A): 建库 + 两张 EXTERNAL 表并灌示例数据。
+ * 仅用于本地开发的 Hive fixture：建库并按正式事实表结构灌入确定性脱敏数据。
  *
  * <p>存算分离: 元数据进 Hive Metastore (thrift), parquet 数据由 Spark 侧写到 MinIO/S3A。
  * 用 saveAsTable + 显式 path 选项建成 EXTERNAL 表 —— Spark 做 S3 IO, metastore 只记 LOCATION,
@@ -23,7 +25,8 @@ import org.apache.spark.sql.types.StructType;
  *
  * <ul>
  *   <li>{@code risk_dw.dwd_cust_feature}: 客户离线画像宽表, 供 RatingEngineJob JOIN ES 标签评级</li>
- *   <li>{@code risk_dw.dwd_fraud_train}: 反欺诈训练样本宽表, 供 FraudModelTrainer 训练 (列与线上 ModelScorer 对齐)</li>
+ *   <li>{@code risk_dw.dwd_transaction_fact/dwd_decision_feature/fact_case_label}: 正式离线画像与训练输入契约</li>
+ *   <li>{@code risk_dw.dwd_fraud_train}: 旧版兼容训练 fixture，不再是正式训练入口</li>
  * </ul>
  *
  * <p>环境变量: HIVE_METASTORE_URIS / S3_ENDPOINT / S3_ACCESS_KEY / S3_SECRET_KEY / WAREHOUSE_BASE。
@@ -31,16 +34,18 @@ import org.apache.spark.sql.types.StructType;
 public class HiveSeedJob {
 
     public static void main(String[] args) {
+        if (!"true".equalsIgnoreCase(System.getenv("ALLOW_FIXTURE_SEED"))) {
+            throw new IllegalStateException("refusing to overwrite local fixture tables without ALLOW_FIXTURE_SEED=true");
+        }
         String warehouseBase = System.getenv().getOrDefault("WAREHOUSE_BASE", "s3a://warehouse/risk_dw");
 
         SparkSession spark = SparkSessions.builder("hive-seed");
         try {
-            // 幂等重灌: 删库重建并显式落 s3a, 避免残留的本地 location
-            spark.sql("DROP DATABASE IF EXISTS risk_dw CASCADE");
-            spark.sql("CREATE DATABASE risk_dw LOCATION '" + warehouseBase + "'");
+            spark.sql("CREATE DATABASE IF NOT EXISTS risk_dw LOCATION '" + warehouseBase + "'");
 
             seedCustFeature(spark, warehouseBase + "/dwd_cust_feature");
             seedFraudTrain(spark, warehouseBase + "/dwd_fraud_train");
+            seedDecisionLifecycleFacts(spark, warehouseBase);
 
             System.out.println("[hive-seed] 完成。表清单:");
             spark.sql("SHOW TABLES IN risk_dw").show(false);
@@ -85,6 +90,66 @@ public class HiveSeedJob {
                 new StructField("label", DataTypes.DoubleType, false, Metadata.empty())
         });
         write(spark.createDataFrame(synthesize(5000), schema), "risk_dw.dwd_fraud_train", path);
+    }
+
+    /** Fixtures match the immutable tables produced by profiling-offline/RiskFactIngestionJob. */
+    private static void seedDecisionLifecycleFacts(SparkSession spark, String warehouseBase) {
+        StructType transactionSchema = new StructType(new StructField[]{
+                new StructField("source_id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("txn_id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("customer_id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("counterparty_id", DataTypes.StringType, true, Metadata.empty()),
+                new StructField("amount_minor", DataTypes.LongType, false, Metadata.empty()),
+                new StructField("event_time", DataTypes.TimestampType, false, Metadata.empty())
+        });
+        StructType featureSchema = new StructType(new StructField[]{
+                new StructField("source_id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("txn_id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("amount", DataTypes.DoubleType, false, Metadata.empty()),
+                new StructField("daily_amount", DataTypes.DoubleType, false, Metadata.empty()),
+                new StructField("daily_count", DataTypes.DoubleType, false, Metadata.empty()),
+                new StructField("hour", DataTypes.DoubleType, false, Metadata.empty()),
+                new StructField("cross_bank", DataTypes.DoubleType, false, Metadata.empty()),
+                new StructField("device_new", DataTypes.DoubleType, false, Metadata.empty())
+        });
+        StructType labelSchema = new StructType(new StructField[]{
+                new StructField("source_id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("txn_id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("label", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("created_at", DataTypes.TimestampType, false, Metadata.empty())
+        });
+        List<Row> transactions = new ArrayList<>();
+        List<Row> features = new ArrayList<>();
+        List<Row> labels = new ArrayList<>();
+        Random random = new Random(42);
+        Instant base = Instant.now().minusSeconds(30L * 24 * 60 * 60);
+        for (int index = 0; index < 5_000; index++) {
+            double amount = Math.abs(random.nextGaussian()) * 30_000 + 2_000;
+            double dailyAmount = Math.abs(random.nextGaussian()) * 50_000 + amount;
+            double dailyCount = random.nextInt(20);
+            double hour = random.nextInt(24);
+            double crossBank = random.nextDouble() < 0.4 ? 1d : 0d;
+            double deviceNew = random.nextDouble() < 0.2 ? 1d : 0d;
+            double signal = -3 + 0.00002 * amount + 0.000015 * dailyAmount + 1.2 * deviceNew
+                    + 0.6 * crossBank + (hour < 6 ? 1 : 0) + 0.05 * dailyCount;
+            boolean fraud = random.nextDouble() < 1d / (1d + Math.exp(-signal));
+            String txnId = "fixture-txn-" + index;
+            String customerId = "fixture-customer-token-" + index % 200;
+            Instant eventTime = base.plusSeconds(index * 300L);
+            transactions.add(RowFactory.create("FIXTURE", txnId, customerId,
+                    crossBank == 1d ? "fixture-counterparty-token-" + index % 400 : null,
+                    Math.round(amount * 100), Timestamp.from(eventTime)));
+            features.add(RowFactory.create("FIXTURE", txnId, amount, dailyAmount, dailyCount,
+                    hour, crossBank, deviceNew));
+            labels.add(RowFactory.create("FIXTURE", txnId, fraud ? "FRAUD" : "NORMAL",
+                    Timestamp.from(eventTime.plusSeconds(60))));
+        }
+        write(spark.createDataFrame(transactions, transactionSchema), "risk_dw.dwd_transaction_fact",
+                warehouseBase + "/dwd_transaction_fact");
+        write(spark.createDataFrame(features, featureSchema), "risk_dw.dwd_decision_feature",
+                warehouseBase + "/dwd_decision_feature");
+        write(spark.createDataFrame(labels, labelSchema), "risk_dw.fact_case_label",
+                warehouseBase + "/fact_case_label");
     }
 
     /** EXTERNAL 表落地: 显式 path → Spark 写 S3, metastore 只记 LOCATION 不碰 S3。 */

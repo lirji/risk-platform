@@ -1,0 +1,12 @@
+risk:
+  identity:
+    issuer: ${CASDOOR_PUBLIC_URL:http://localhost:8000}
+    jwk-set-uri: ${CASDOOR_INTERNAL_URL:http://localhost:8000}/.well-known/jwks
+    organization: ${CASDOOR_ORGANIZATION:risk-platform}
+    evaluation-audiences: ${CASDOOR_EVALUATION_AUDIENCES:risk-bank-client}
+    runtime-audiences: ${CASDOOR_RUNTIME_AUDIENCES:risk-runtime-client}
+  security:
+    pii-hmac-key: ${PII_HMAC_KEY}
+
+server:
+  max-http-request-header-size: 64KB

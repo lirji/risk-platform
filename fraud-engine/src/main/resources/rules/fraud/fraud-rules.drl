@@ -1,9 +1,9 @@
 package rules.fraud;
 
-import com.lrj.risk.fraud.engine.model.TransactionEvent;
-import com.lrj.risk.fraud.engine.model.RiskAssessment;
-import com.lrj.risk.fraud.engine.model.RiskLevel;
-import com.lrj.risk.feature.FeatureSnapshot;
+import com.lrj.risk.fraud.domain.model.TransactionEvent;
+import com.lrj.risk.fraud.domain.model.RiskAssessment;
+import com.lrj.risk.fraud.domain.model.RiskLevel;
+import com.lrj.risk.feature.domain.FeatureSnapshot;
 
 // =====================================================================
 // 规则集 "blacklist": 黑白名单层 (最快, 命中直接拒绝)

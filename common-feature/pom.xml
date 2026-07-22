@@ -16,10 +16,19 @@
     <description>共享特征层: 特征模型 + 在线特征查询客户端 (反欺诈与画像共用)</description>
 
     <dependencies>
-        <!-- 在线特征走 Redis; spring-data-redis 提供 StringRedisTemplate + 自动配置 -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <groupId>com.lrj.risk</groupId>
+            <artifactId>platform-contracts</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

@@ -1,0 +1,10 @@
+.git
+.idea
+.claude
+**/target
+risk-console/node_modules
+risk-console/dist
+libs/*
+!libs/authz/
+!libs/authz/**
+**/*.log

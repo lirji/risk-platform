@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.Duration;
+import java.util.UUID;
 
 import com.lrj.risk.rating.config.ConfigRepository;
 import com.lrj.risk.rating.config.RatingModel;
@@ -39,21 +41,22 @@ import org.apache.spark.sql.types.StructType;
  */
 public class RatingEngineJob {
 
-    /** Hive 离线画像宽表 (由 HiveSeedJob 建/灌, 数据在 MinIO/S3A)。 */
+    /** Hive 离线画像宽表（由画像事实加工链路产生，数据在 MinIO/S3A）。 */
     private static final String HIVE_FEATURE_TABLE = "risk_dw.dwd_cust_feature";
 
     public static void main(String[] args) {
         String mysqlUrl = System.getenv().getOrDefault("MYSQL_URL",
                 "jdbc:mysql://127.0.0.1:13307/risk_platform?useSSL=false&allowPublicKeyRetrieval=true");
         String mysqlUser = System.getenv().getOrDefault("MYSQL_USER", "root");
-        String mysqlPwd = System.getenv().getOrDefault("MYSQL_PWD", "root123");
+        String mysqlPwd = requiredEnv("MYSQL_PWD");
         String esUrl = System.getenv().getOrDefault("ES_URL", "http://localhost:9200");
 
         ConfigRepository repo = new ConfigRepository(mysqlUrl, mysqlUser, mysqlPwd);
         EsClient es = new EsClient(esUrl);
 
         // 步骤1: 领任务 + 加载模型
-        Optional<RatingTask> opt = repo.nextPendingTask();
+        String workerId = System.getenv().getOrDefault("RATING_WORKER_ID", "rating-" + UUID.randomUUID());
+        Optional<RatingTask> opt = repo.claimNextPendingTask(workerId, Duration.ofMinutes(30));
         if (opt.isEmpty()) {
             System.out.println("[rating-engine] 无 PENDING 任务, 退出");
             return;
@@ -61,7 +64,6 @@ public class RatingEngineJob {
         RatingTask task = opt.get();
         RatingModel model = repo.loadModel(task.getModelCode());
         System.out.printf("[rating-engine] 领到任务 %s, 模型 %s%n", task.getTaskCode(), model.getModelCode());
-        repo.updateTaskStatus(task.getId(), "RUNNING");
 
         SparkSession spark = SparkSessions.builder("rating-engine-" + task.getTaskCode());
 
@@ -73,7 +75,7 @@ public class RatingEngineJob {
             System.out.printf("[rating-engine] Hive 宽表 %d 行 JOIN ES 标签 %d 行 → %d 行%n",
                     hiveFeatures.count(), esTags.count(), joined.count());
             if (joined.isEmpty()) {
-                repo.updateTaskStatus(task.getId(), "DONE");
+                repo.completeTask(task.getId(), workerId);
                 return;
             }
 
@@ -102,17 +104,23 @@ public class RatingEngineJob {
 
             // 步骤4: 写 es 风险库 + 任务完成
             es.bulkIndex(task.getTargetIndex(), riskDocs);
-            repo.updateTaskStatus(task.getId(), "DONE");
+            repo.completeTask(task.getId(), workerId);
             System.out.printf("[rating-engine] 完成: %d 个客户评级写入 %s%n",
                     riskDocs.size(), task.getTargetIndex());
             riskDocs.forEach(d -> System.out.printf("  %s → 分%s 级%s 命中%s%n",
                     d.get("cust_id"), d.get("score"), d.get("grade"), d.get("hit_rules")));
         } catch (RuntimeException e) {
-            repo.updateTaskStatus(task.getId(), "FAILED");
+            repo.failTask(task.getId(), workerId, e.toString());
             throw e;
         } finally {
             spark.stop();
         }
+    }
+
+    private static String requiredEnv(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) throw new IllegalStateException(name + " must be set");
+        return value;
     }
 
     /**

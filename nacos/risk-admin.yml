@@ -1,0 +1,9 @@
+risk:
+  gateway:
+    base-url: http://fraud-gateway:8082
+
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
