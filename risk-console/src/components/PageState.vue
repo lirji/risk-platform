@@ -4,8 +4,9 @@ defineEmits<{ retry: [] }>()
 </script>
 
 <template>
-  <div v-if="loading" class="state-panel" aria-live="polite" aria-busy="true">
-    <el-skeleton :rows="6" animated />
+  <div v-if="loading" class="state-panel state-loading" role="status" aria-live="polite" aria-busy="true">
+    <span class="sr-only">正在加载页面数据</span>
+    <el-skeleton :rows="5" animated />
   </div>
   <div v-else-if="error" class="state-panel state-error" role="alert">
     <span class="state-mark">!</span><h3>数据暂时不可用</h3><p>{{ error }}</p>

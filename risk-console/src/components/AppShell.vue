@@ -31,17 +31,31 @@ function search() { if (query.value.trim()) router.push({ path: '/decisions', qu
     <div v-if="mobileOpen" class="scrim" @click="mobileOpen = false" />
     <main class="workspace">
       <header class="topbar">
-        <button class="icon-button desktop-toggle" aria-label="折叠导航" @click="collapsed = !collapsed">☰</button>
-        <button class="icon-button mobile-toggle" aria-label="打开导航" @click="mobileOpen = true">☰</button>
+        <button
+          class="icon-button desktop-toggle"
+          type="button"
+          :aria-label="collapsed ? '展开导航' : '折叠导航'"
+          :title="collapsed ? '展开导航' : '折叠导航'"
+          @click="collapsed = !collapsed"
+        >
+          ☰
+        </button>
+        <button class="icon-button mobile-toggle" type="button" aria-label="打开导航" title="打开导航" @click="mobileOpen = true">☰</button>
         <div class="page-heading"><span>CONTROL PLANE</span><h1>{{ title }}</h1></div>
         <form class="global-search" role="search" @submit.prevent="search"><span>⌕</span><input v-model="query" aria-label="搜索决策流水" placeholder="搜索交易流水…" /></form>
         <span class="env-pill">{{ auth.user?.mode === 'auth-platform' ? 'AUTH PLATFORM' : 'LOCAL' }}</span>
         <el-dropdown trigger="click">
-          <button class="user-button"><span>{{ auth.user?.displayName?.slice(0, 1) || 'U' }}</span><b>{{ auth.user?.displayName || '用户' }}</b></button>
+          <button class="user-button" type="button" aria-label="打开用户菜单"><span>{{ auth.user?.displayName?.slice(0, 1) || 'U' }}</span><b>{{ auth.user?.displayName || '用户' }}</b></button>
           <template #dropdown><el-dropdown-menu><el-dropdown-item disabled>{{ auth.user?.roles.join(' · ') }}</el-dropdown-item><el-dropdown-item divided @click="auth.logout">退出登录</el-dropdown-item></el-dropdown-menu></template>
         </el-dropdown>
       </header>
-      <section class="page-content"><RouterView /></section>
+      <section class="page-content">
+        <RouterView v-slot="{ Component, route: currentRoute }">
+          <Transition name="route-view" mode="out-in">
+            <component :is="Component" :key="currentRoute.path" />
+          </Transition>
+        </RouterView>
+      </section>
     </main>
   </div>
 </template>

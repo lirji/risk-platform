@@ -17,4 +17,10 @@ describe('PageState', () => {
   it('renders content only in ready state', () => {
     expect(renderState({}).getByText('业务数据')).toBeTruthy()
   })
+
+  it('uses the themed loading surface while data is pending', () => {
+    const view = renderState({ loading: true })
+    expect(view.getByRole('status').classList.contains('state-loading')).toBe(true)
+    expect(view.getByText('正在加载页面数据')).toBeTruthy()
+  })
 })
