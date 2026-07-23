@@ -7,7 +7,7 @@ const caseId = process.env.E2E_CASE_ID
 async function loginThroughCasdoor(page: Page) {
   if (!username || !password) throw new Error('E2E_USERNAME and E2E_PASSWORD are required')
   await page.goto('/login')
-  await page.getByRole('button', { name: /统一身份平台/ }).click()
+  await page.getByRole('button', { name: /统一身份登录/ }).click()
   await expect(page).toHaveURL(/localhost:8000/)
 
   // A shared Casdoor client can either derive the organization from its client ID or show
@@ -41,7 +41,7 @@ test('auth-platform PKCE login, rule draft and assigned-case resolution', async 
 
   await loginThroughCasdoor(page)
   await expect(page.getByRole('heading', { name: '实时风险态势' })).toBeVisible()
-  await expect(page.getByText('AUTH PLATFORM', { exact: true })).toBeVisible()
+  await expect(page.getByText('生产镜像', { exact: true })).toBeVisible()
   expect(tokenExchange).toContain('code_verifier=')
   expect(tokenExchange).not.toContain('client_secret=')
 
@@ -50,9 +50,9 @@ test('auth-platform PKCE login, rule draft and assigned-case resolution', async 
   const ruleCode = `AUTH_E2E_${Date.now()}`
   await page.getByRole('button', { name: '新建规则版本' }).click()
   await page.getByLabel('规则编码').fill(ruleCode)
-  await page.getByLabel('名称').fill('auth-platform E2E draft')
+  await page.getByLabel('规则名称').fill('auth-platform E2E draft')
   await page.getByRole('button', { name: '保存草稿' }).click()
-  await expect(page.getByText('草稿已创建')).toBeVisible()
+  await expect(page.getByText('规则草稿已创建')).toBeVisible()
   await expect(page.getByText(ruleCode, { exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: /案件中心/ }).click()
@@ -66,11 +66,10 @@ test('auth-platform PKCE login, rule draft and assigned-case resolution', async 
   await page.getByText('处理中', { exact: true }).click()
   await expect(row).toBeVisible()
   await row.getByRole('button', { name: '结案' }).click()
-  await page.getByRole('dialog', { name: '结案' }).getByRole('textbox').fill('browser auth-platform E2E passed')
-  await page.getByRole('dialog', { name: '结案' }).getByRole('button', { name: 'OK' }).click()
+  await page.getByRole('dialog', { name: '案件结论与标签回流' }).getByRole('textbox').fill('browser auth-platform E2E passed')
   const resolveResponse = page.waitForResponse(response =>
     response.url().includes(`/api/v1/cases/${caseId}/resolve`) && response.request().method() === 'POST')
-  await page.getByRole('dialog', { name: '标签回流' }).getByRole('button', { name: '欺诈' }).click()
+  await page.getByRole('dialog', { name: '案件结论与标签回流' }).getByRole('button', { name: '确认结案' }).click()
   expect((await resolveResponse).status()).toBe(200)
   await page.getByText('已结案', { exact: true }).click()
   await expect(row).toContainText('RESOLVED')
@@ -86,9 +85,9 @@ test('restores the OIDC session after reload and completes SSO logout', async ({
   await loginThroughCasdoor(page)
   await page.reload()
   await expect(page.getByRole('heading', { name: '实时风险态势' })).toBeVisible()
-  await expect(page.getByText('AUTH PLATFORM', { exact: true })).toBeVisible()
+  await expect(page.getByText('生产镜像', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: /risk-e2e-admin/ }).click()
   await page.getByRole('menuitem', { name: '退出登录' }).click()
   await expect(page).toHaveURL(/localhost:15173\/login/)
-  await expect(page.getByRole('button', { name: /统一身份平台/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /统一身份登录/ })).toBeVisible()
 })

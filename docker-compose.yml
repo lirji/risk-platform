@@ -266,7 +266,7 @@ services:
       retries: 30
 
   risk-spicedb-migrate:
-    image: authzed/spicedb:latest
+    image: authzed/spicedb@sha256:830527f85ac4cb40aaf3d3e8e3fe0b84cdace5ee81ceb43f905b3822ee580b82
     profiles: ["authz", "apps"]
     command: datastore migrate head
     environment:
@@ -277,7 +277,7 @@ services:
     restart: on-failure
 
   risk-spicedb:
-    image: authzed/spicedb:latest
+    image: authzed/spicedb@sha256:830527f85ac4cb40aaf3d3e8e3fe0b84cdace5ee81ceb43f905b3822ee580b82
     profiles: ["authz", "apps"]
     command: serve
     environment:
@@ -412,7 +412,7 @@ services:
 
   # 对象存储: 离线宽表 parquet 落 s3a://warehouse/...; 控制台 http://localhost:9001。
   minio:
-    image: minio/minio:latest
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: risk-minio
     profiles: ["hive", "full", "apps"]
     command: server /data --console-address ":9001"
@@ -427,7 +427,7 @@ services:
 
   # 一次性建桶 warehouse, 完成即退出
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     container_name: risk-minio-init
     profiles: ["hive", "full", "apps"]
     depends_on:

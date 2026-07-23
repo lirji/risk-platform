@@ -1,4 +1,5 @@
 .git
+.run
 .idea
 .claude
 **/target

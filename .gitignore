@@ -24,6 +24,9 @@ Desktop.ini
 .env.*
 !.env.example
 !.env.*.example
+
+# Local development launcher state and logs
+.run/
 *.local
 *.jks
 *.p12
