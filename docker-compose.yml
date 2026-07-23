@@ -98,6 +98,7 @@ services:
       mysql: {condition: service_healthy}
       redis: {condition: service_started}
       kafka: {condition: service_started}
+      nacos: {condition: service_healthy}
       skywalking-agent: {condition: service_completed_successfully}
     environment:
       SPRING_PROFILES_ACTIVE: secure,nacos
@@ -132,6 +133,7 @@ services:
       timeout: 3s
       retries: 24
       start_period: 20s
+    restart: unless-stopped
 
   risk-admin:
     profiles: ["apps"]
@@ -183,6 +185,7 @@ services:
       timeout: 3s
       retries: 24
       start_period: 20s
+    restart: unless-stopped
 
   fraud-decision-log:
     profiles: ["apps"]
@@ -246,6 +249,7 @@ services:
       risk-admin: {condition: service_healthy}
     environment:
       CASDOOR_PUBLIC_URL: ${CASDOOR_PUBLIC_URL:-http://localhost:8000}
+    restart: unless-stopped
 
   # ===== 关系授权数据面: profile=authz/apps =====
   # 身份/SSO 由 auth-platform 的 Casdoor 提供；这里只有 risk 业务关系数据。
@@ -326,12 +330,18 @@ services:
       NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-risk-platform}
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
       NACOS_AUTH_SYSTEM_TYPE: nacos
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
 
   nacos-config-init:
     image: curlimages/curl:8.10.1
     profiles: ["full", "apps"]
     depends_on:
-      nacos: {condition: service_started}
+      nacos: {condition: service_healthy}
     entrypoint: ["/bin/sh", "/config/publish.sh"]
     environment:
       NACOS_ADDR: http://nacos:8848
